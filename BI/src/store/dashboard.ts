@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-export type ChartType = "bar" | "line" | "pie" | "table" | "pareto"
+export type ChartType = "bar" | "line" | "pie" | "table" | "pareto" | "waterfall" | "heatmap" | "boxplot" | "scatter" | "treemap" | "histogram"
 
 export interface ChartCard {
   id: string
@@ -54,7 +54,6 @@ const nextPos = () => {
 export const useDashboardStore = create<DashboardStore>((set, get) => ({
   sessionId: null,
   setSessionId: (id) => set({ sessionId: id }),
-
   charts: [],
   addChart: (card) => {
     const pos = nextPos()
@@ -73,7 +72,6 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   })),
   clearSelection: () => set((s) => ({ charts: s.charts.map(c => ({ ...c, selected: false })) })),
   selectedCharts: () => get().charts.filter(c => c.selected),
-
   messages: [],
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
   updateMessage: (id, patch) => set((s) => ({
