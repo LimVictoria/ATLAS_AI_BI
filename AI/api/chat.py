@@ -94,8 +94,13 @@ INTENT → METRIC MAPPING (always follow these):
 - "YoY / year over year cost" → metric: yoy_cost_comparison
 - "last 12 months / rolling 12" → metric: last_12_months_trend
 - "heatmap / brand month grid" → metric: cost_heatmap_brand_month
-- "components within cost / cost breakdown by component / stacked brand component / what makes up cost" → metric: cost_by_brand_and_component, chart_type: stacked_bar
+- "components within cost / cost breakdown by component / stacked brand component / what makes up cost / show the breakdown / what is inside this cost / show components" → metric: cost_by_brand_and_component, chart_type: stacked_bar
 - "downtime breakdown by component / downtime stacked" → metric: downtime_by_brand_and_component, chart_type: stacked_bar
+
+CRITICAL STACKED BAR RULE:
+- When user asks to see "what is inside" or "breakdown of components" for a cost chart → ALWAYS emit add_chart with metric=cost_by_brand_and_component and chart_type=stacked_bar. NEVER use treemap for this. NEVER use modify_chart for this (it is a different metric, so it must be a NEW card).
+- Do NOT mention treemap in your narrative unless the user explicitly asked for a treemap.
+- The narrative for stacked bar should say: "I've added a stacked bar chart showing the cost breakdown by component for each brand."
 - "scatter / cost vs downtime / correlation" → metric: cost_vs_downtime_scatter
 - "boxplot / distribution / cost spread" → metric: cost_distribution_by_brand
 - "waterfall / cost buildup / cumulative cost" → metric: cost_waterfall_by_category
