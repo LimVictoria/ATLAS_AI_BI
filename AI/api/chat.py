@@ -220,14 +220,14 @@ def execute_chart_action(action: dict) -> dict | None:
         # Safety remap: stacked_bar on wrong metric → swap metric
         if chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
             metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
-            action["metric_id"] = metric_id
         req = QueryRequest(
             metric_id=metric_id,
             chart_type=chart_type,
             filters=action.get("filters", {}),
         )
         data = run_metric(req)
-        return {**action, "chart_data": data}
+        # Propagate remapped metric_id back so frontend gets the right one
+        return {**action, "metric_id": metric_id, "chart_data": data}
     except Exception as e:
         print(f"[execute_chart_action] Error: {e}")
         return None
