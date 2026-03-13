@@ -108,7 +108,7 @@ export default function AIPanel() {
               }}>
                 ATLAS
               </div>
-              <div style={{ fontSize: 10, color: "#38BDF8", fontWeight: 500, letterSpacing: "0.08em", marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: "#38BDF8", fontWeight: 500, letterSpacing: "0.08em", marginTop: 2 }}>
                 AI Chat
               </div>
             </div>
@@ -133,7 +133,7 @@ export default function AIPanel() {
 
         {/* Tagline */}
         <div style={{
-          marginTop: 10, fontSize: 10.5, color: "#475569", lineHeight: 1.5,
+          marginTop: 10, fontSize: 12, color: "#475569", lineHeight: 1.5,
           fontStyle: "italic",
         }}>
           Every decision, grounded.
@@ -159,13 +159,13 @@ export default function AIPanel() {
       {/* ── Suggestions ── */}
       {/* ── Persistent suggestions ── */}
       <div style={{ padding: "10px 14px 6px", flexShrink: 0, borderBottom: "1px solid #F1F5F9" }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.06em", marginBottom: 6 }}>QUICK ASKS</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.06em", marginBottom: 6 }}>QUICK ASKS</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
           {SUGGESTIONS.map((s, i) => (
             <button key={s} onClick={() => send(s)} style={{
               padding: "4px 9px",
               border: `1px solid ${MSG_ACCENTS[i % MSG_ACCENTS.length]}28`,
-              borderRadius: 99, fontSize: 10.5,
+              borderRadius: 99, fontSize: 12,
               color: MSG_ACCENTS[i % MSG_ACCENTS.length],
               background: `${MSG_ACCENTS[i % MSG_ACCENTS.length]}07`,
               cursor: "pointer", transition: "all 0.12s", whiteSpace: "nowrap", fontWeight: 500,
@@ -216,7 +216,7 @@ export default function AIPanel() {
                 color: msg.role === "user" ? "#FFFFFF" : "#1E293B",
                 borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
                 border: msg.role === "user" ? "none" : "1px solid #F1F5F9",
-                fontSize: 12.5, lineHeight: 1.65, whiteSpace: "pre-wrap",
+                fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap",
                 boxShadow: msg.role === "user"
                   ? "0 2px 8px rgba(14,165,233,0.25)"
                   : "0 1px 3px rgba(0,0,0,0.04)",
@@ -233,7 +233,7 @@ export default function AIPanel() {
       {selectedCard && (
         <div style={{
           margin: "0 14px 6px",
-          fontSize: 10.5, color: "#0284C7",
+          fontSize: 12, color: "#0284C7",
           background: "linear-gradient(135deg, #EFF6FF, #F0F9FF)",
           border: "1px solid #BFDBFE", borderRadius: 8,
           padding: "5px 12px", display: "flex", alignItems: "center", gap: 7,
@@ -263,7 +263,7 @@ export default function AIPanel() {
             style={{
               width: "100%", padding: "9px 44px 9px 12px",
               border: "1px solid #E2E8F0", borderRadius: 10,
-              fontSize: 12.5, outline: "none", resize: "none",
+              fontSize: 14, outline: "none", resize: "none",
               fontFamily: "Inter, system-ui, sans-serif",
               color: "#1E293B", background: loading ? "#F8FAFC" : "#FFFFFF",
               boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s",
@@ -293,7 +293,7 @@ export default function AIPanel() {
             }
           </button>
         </div>
-        <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 4, textAlign: "right" }}>
+        <div style={{ fontSize: 11, color: "#CBD5E1", marginTop: 4, textAlign: "right" }}>
           Shift+Enter for new line
         </div>
       </div>
