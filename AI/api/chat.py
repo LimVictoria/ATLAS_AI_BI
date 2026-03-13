@@ -96,6 +96,7 @@ INTENT → METRIC MAPPING (always follow these):
 - "last 12 months / rolling 12" → metric: last_12_months_trend
 - "heatmap / brand month grid" → metric: cost_heatmap_brand_month
 - "cost by brand and month / monthly cost per brand / number of vehicles and cost by year month / build a table with brand cost and month / cost incurred by month / brand monthly breakdown" → metric: cost_by_brand_and_month, chart_type: table
+- "vehicle and cost by month / cost per vehicle by month / table of vehicle cost and month / which vehicle cost how much per month / vehicle maintenance cost year month / produce a table with vehicle cost and month" → metric: cost_per_vehicle_by_month, chart_type: table
 - "components within cost / cost breakdown by component / stacked brand component / what makes up cost / show the breakdown / what is inside this cost / show components" → metric: cost_by_brand_and_component, chart_type: stacked_bar
 - "downtime breakdown by component / downtime stacked" → metric: downtime_by_brand_and_component, chart_type: stacked_bar
 
