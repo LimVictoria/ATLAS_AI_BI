@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Send, Trash2, Loader } from "lucide-react"
+import { Send, Trash2, Loader, Sparkles } from "lucide-react"
 import { v4 as uuid } from "uuid"
 import { useDashboardStore } from "@/store/dashboard"
 import { sendChat, clearChatHistory } from "@/utils/api"
@@ -8,16 +8,19 @@ import { processUIActions } from "@/hooks/useUIActions"
 
 const SUGGESTIONS = [
   "Show total cost by brand",
+  "Components within the cost — stacked",
   "Which components fail most?",
   "Show failure trend by quarter",
-  "Show cost vs downtime scatter",
-  "Show cost heatmap by brand & month",
+  "Cost vs downtime scatter",
+  "Cost heatmap by brand & month",
   "Waterfall chart of cost by category",
-  "Cost distribution boxplot by brand",
+  "Cost distribution boxplot",
   "Show last 12 months trend",
-  "Scheduled vs unscheduled ratio",
   "How many charts do I have?",
 ]
+
+// Accent colours cycling through categories
+const MSG_ACCENTS = ["#3B82F6","#7C3AED","#059669","#D97706","#0891B2","#DC2626"]
 
 export default function AIPanel() {
   const { sessionId, messages, addMessage, updateMessage, clearMessages, charts } = useDashboardStore()
@@ -36,29 +39,21 @@ export default function AIPanel() {
     [messages]
   )
 
-  const buildBoardContext = useCallback(() => {
-    return {
-      charts_on_canvas: charts.map(c => ({
-        id: c.id,
-        title: c.title,
-        metric_id: c.metric_id,
-        chart_type: c.chart_type,
-        filters: c.filters || {},
-        selected: c.selected || false,
-      })),
-      selected_ids: charts.filter(c => c.selected).map(c => c.id),
-    }
-  }, [charts])
+  const buildBoardContext = useCallback(() => ({
+    charts_on_canvas: charts.map(c => ({
+      id: c.id, title: c.title, metric_id: c.metric_id,
+      chart_type: c.chart_type, filters: c.filters || {}, selected: c.selected || false,
+    })),
+    selected_ids: charts.filter(c => c.selected).map(c => c.id),
+  }), [charts])
 
   const send = useCallback(async (text: string) => {
     if (!text.trim() || loading || !sessionId) return
     setInput("")
     setLoading(true)
-
     addMessage({ id: uuid(), role: "user", text, timestamp: new Date() })
     const loadingId = uuid()
     addMessage({ id: loadingId, role: "assistant", text: "", timestamp: new Date(), loading: true })
-
     try {
       const resp = await sendChat(sessionId, text, buildHistory(), buildBoardContext())
       updateMessage(loadingId, { loading: false, text: resp.narrative || "Done." })
@@ -75,59 +70,122 @@ export default function AIPanel() {
     if (sessionId) await clearChatHistory(sessionId).catch(() => {})
   }
 
+  const selectedCard = charts.find(c => c.selected)
+
   return (
     <div style={{
-      width: "380px", flexShrink: 0, display: "flex", flexDirection: "column",
-      height: "100vh", background: "#FFFFFF", borderRight: "1px solid #E8ECF0", overflow: "hidden"
+      width: 400, flexShrink: 0, display: "flex", flexDirection: "column",
+      height: "100vh", background: "#FFFFFF",
+      borderRight: "1px solid #E8ECF0", overflow: "hidden",
     }}>
-      {/* Header */}
+      {/* ── Header ── */}
       <div style={{
-        height: 52, display: "flex", alignItems: "center",
-        padding: "0 16px", borderBottom: "1px solid #f1f5f9",
-        background: "#ffffff", gap: 8, flexShrink: 0,
+        flexShrink: 0, padding: "16px 18px 14px",
+        background: "linear-gradient(135deg, #0F172A 0%, #1E293B 70%, #0c2340 100%)",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.2)",
       }}>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 13, color: "#0284c7", letterSpacing: "0.08em" }}>
-          ATLAS
-        </span>
-        <span style={{ fontSize: 11, color: "#cbd5e1", fontWeight: 400 }}>· AI</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          {charts.length > 0 && (
-            <span style={{
-              fontSize: 10, color: "#64748b", background: "#f1f5f9",
-              padding: "2px 8px", borderRadius: 99, fontWeight: 500,
+        {/* Logo row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10,
+              background: "linear-gradient(135deg, #0EA5E9, #2563EB)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 2px 10px rgba(14,165,233,0.4)",
+              flexShrink: 0,
             }}>
-              {charts.length} chart{charts.length !== 1 ? "s" : ""}
-              {charts.filter(c => c.selected).length > 0 && (
-                <span style={{ color: "#0284c7", marginLeft: 4 }}>
-                  · {charts.filter(c => c.selected).length} selected
-                </span>
-              )}
-            </span>
-          )}
-          <button onClick={handleClear} title="Clear chat"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "#cbd5e1", padding: 4, display: "flex", lineHeight: 1 }}>
-            <Trash2 size={13} />
-          </button>
+              <Sparkles size={16} color="#fff" />
+            </div>
+            <div>
+              <div style={{
+                fontFamily: "'IBM Plex Mono', monospace", fontWeight: 800,
+                fontSize: 18, color: "#F1F5F9", letterSpacing: "0.12em", lineHeight: 1,
+              }}>
+                ATLAS
+              </div>
+              <div style={{ fontSize: 10, color: "#38BDF8", fontWeight: 500, letterSpacing: "0.08em", marginTop: 2 }}>
+                AI Chat
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {charts.length > 0 && (
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500 }}>
+                  {charts.length} chart{charts.length !== 1 ? "s" : ""}
+                  {charts.filter(c => c.selected).length > 0 && (
+                    <span style={{ color: "#38BDF8", marginLeft: 6 }}>
+                      · {charts.filter(c => c.selected).length} selected
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            <button onClick={handleClear} title="Clear chat" style={{
+              background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 8, cursor: "pointer", color: "#64748B",
+              width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "#94A3B8" }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "#64748B" }}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tagline */}
+        <div style={{
+          marginTop: 10, fontSize: 10.5, color: "#475569", lineHeight: 1.5,
+          fontStyle: "italic",
+        }}>
+          Every decision, grounded.
+        </div>
+
+        {/* Category colour bar */}
+        <div style={{ display: "flex", gap: 3, marginTop: 10 }}>
+          {[
+            { c: "#3B82F6", l: "Cost" },
+            { c: "#7C3AED", l: "Downtime" },
+            { c: "#DC2626", l: "Failure" },
+            { c: "#059669", l: "Fleet" },
+            { c: "#D97706", l: "Workshop" },
+            { c: "#0891B2", l: "Time" },
+          ].map(({ c, l }) => (
+            <div key={l} title={l} style={{
+              flex: 1, height: 3, borderRadius: 99, background: c, opacity: 0.7,
+            }} />
+          ))}
         </div>
       </div>
 
-      {/* Suggestions */}
+      {/* ── Suggestions ── */}
       {messages.length === 0 && (
-        <div style={{ padding: "20px 16px 8px", flexShrink: 0 }}>
-          <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 10, lineHeight: 1.6 }}>
-            Ask about costs, failures, downtime, or workshops. Select a chart on the canvas to modify it directly.
+        <div style={{ padding: "16px 16px 8px", flexShrink: 0 }}>
+          <p style={{ fontSize: 11.5, color: "#64748B", marginBottom: 10, lineHeight: 1.6 }}>
+            Ask about costs, failures, downtime, or workshops. Select a chart to modify it.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {SUGGESTIONS.map(s => (
-              <button key={s} onClick={() => send(s)}
-                style={{
-                  padding: "5px 10px", border: "1px solid #e2e8f0",
-                  borderRadius: 99, fontSize: 11, color: "#64748b",
-                  background: "#ffffff", cursor: "pointer",
-                  transition: "all 0.12s", whiteSpace: "nowrap",
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {SUGGESTIONS.map((s, i) => (
+              <button key={s} onClick={() => send(s)} style={{
+                padding: "5px 10px",
+                border: `1px solid ${MSG_ACCENTS[i % MSG_ACCENTS.length]}30`,
+                borderRadius: 99, fontSize: 11,
+                color: MSG_ACCENTS[i % MSG_ACCENTS.length],
+                background: `${MSG_ACCENTS[i % MSG_ACCENTS.length]}08`,
+                cursor: "pointer", transition: "all 0.12s", whiteSpace: "nowrap",
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}18`
+                  e.currentTarget.style.borderColor = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}60`
                 }}
-                onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = "#0284c7"; (e.target as HTMLElement).style.color = "#0284c7" }}
-                onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = "#e2e8f0"; (e.target as HTMLElement).style.color = "#64748b" }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}08`
+                  e.currentTarget.style.borderColor = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}30`
+                }}
               >
                 {s}
               </button>
@@ -136,22 +194,22 @@ export default function AIPanel() {
         </div>
       )}
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {messages.map(msg => (
+      {/* ── Messages ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {messages.map((msg, idx) => (
           <div key={msg.id} style={{
-            maxWidth: "88%",
+            maxWidth: "90%",
             alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
           }}>
             {msg.loading ? (
               <div style={{
-                padding: "10px 14px", background: "#f8fafc",
-                borderRadius: "12px 12px 12px 3px", border: "1px solid #f1f5f9",
+                padding: "10px 14px", background: "#F8FAFC",
+                borderRadius: "12px 12px 12px 3px", border: "1px solid #F1F5F9",
               }}>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   {[0, 1, 2].map(i => (
                     <div key={i} style={{
-                      width: 6, height: 6, borderRadius: "50%", background: "#94a3b8",
+                      width: 6, height: 6, borderRadius: "50%", background: "#94A3B8",
                       animation: "typing 1.4s infinite ease-in-out",
                       animationDelay: `${i * 0.2}s`,
                     }} />
@@ -161,11 +219,16 @@ export default function AIPanel() {
             ) : (
               <div style={{
                 padding: "9px 13px",
-                background: msg.role === "user" ? "#0284c7" : "#f8fafc",
-                color: msg.role === "user" ? "#ffffff" : "#1e293b",
+                background: msg.role === "user"
+                  ? `linear-gradient(135deg, #0EA5E9, #2563EB)`
+                  : "#F8FAFC",
+                color: msg.role === "user" ? "#FFFFFF" : "#1E293B",
                 borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
-                border: msg.role === "user" ? "none" : "1px solid #f1f5f9",
-                fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap",
+                border: msg.role === "user" ? "none" : "1px solid #F1F5F9",
+                fontSize: 12.5, lineHeight: 1.65, whiteSpace: "pre-wrap",
+                boxShadow: msg.role === "user"
+                  ? "0 2px 8px rgba(14,165,233,0.25)"
+                  : "0 1px 3px rgba(0,0,0,0.04)",
               }}>
                 {msg.text}
               </div>
@@ -175,22 +238,28 @@ export default function AIPanel() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div style={{ padding: "10px 16px 14px", borderTop: "1px solid #f1f5f9", background: "#ffffff", flexShrink: 0 }}>
-        {charts.filter(c => c.selected).length > 0 && (
-          <div style={{
-            fontSize: 10, color: "#0284c7", background: "#EFF6FF",
-            border: "1px solid #BFDBFE", borderRadius: 6,
-            padding: "4px 10px", marginBottom: 8,
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0284c7", flexShrink: 0, display: "inline-block" }} />
-            {charts.filter(c => c.selected).length === 1
-              ? `"${charts.find(c => c.selected)?.title}" is selected — ask to modify it`
-              : `${charts.filter(c => c.selected).length} charts selected`
-            }
-          </div>
-        )}
+      {/* ── Selected card indicator ── */}
+      {selectedCard && (
+        <div style={{
+          margin: "0 14px 6px",
+          fontSize: 10.5, color: "#0284C7",
+          background: "linear-gradient(135deg, #EFF6FF, #F0F9FF)",
+          border: "1px solid #BFDBFE", borderRadius: 8,
+          padding: "5px 12px", display: "flex", alignItems: "center", gap: 7,
+          boxShadow: "0 1px 4px rgba(37,99,235,0.08)",
+        }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: "50%", background: "#0284C7",
+            flexShrink: 0, display: "inline-block",
+            boxShadow: "0 0 0 2px rgba(2,132,199,0.25)",
+          }} />
+          <span style={{ fontWeight: 600 }}>"{selectedCard.title}"</span>
+          <span style={{ color: "#64748B" }}>selected — ask to modify it</span>
+        </div>
+      )}
+
+      {/* ── Input ── */}
+      <div style={{ padding: "6px 14px 14px", borderTop: "1px solid #F1F5F9", background: "#FFFFFF", flexShrink: 0 }}>
         <div style={{ position: "relative" }}>
           <textarea
             ref={textareaRef}
@@ -202,32 +271,38 @@ export default function AIPanel() {
             disabled={loading}
             style={{
               width: "100%", padding: "9px 44px 9px 12px",
-              border: "1px solid #e2e8f0", borderRadius: 8,
-              fontSize: 13, outline: "none", resize: "none",
+              border: "1px solid #E2E8F0", borderRadius: 10,
+              fontSize: 12.5, outline: "none", resize: "none",
               fontFamily: "Inter, system-ui, sans-serif",
-              color: "#1e293b", background: loading ? "#f8fafc" : "#ffffff",
-              boxSizing: "border-box", transition: "border-color 0.15s",
+              color: "#1E293B", background: loading ? "#F8FAFC" : "#FFFFFF",
+              boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s",
             }}
-            onFocus={e => e.target.style.borderColor = "#0284c7"}
-            onBlur={e => e.target.style.borderColor = "#e2e8f0"}
+            onFocus={e => { e.target.style.borderColor = "#0EA5E9"; e.target.style.boxShadow = "0 0 0 3px rgba(14,165,233,0.12)" }}
+            onBlur={e => { e.target.style.borderColor = "#E2E8F0"; e.target.style.boxShadow = "none" }}
           />
           <button
             onClick={() => send(input)}
             disabled={loading || !input.trim()}
             style={{
               position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-              background: loading || !input.trim() ? "#e2e8f0" : "#0284c7",
-              color: loading || !input.trim() ? "#94a3b8" : "#ffffff",
-              border: "none", borderRadius: 6,
+              background: loading || !input.trim()
+                ? "#E2E8F0"
+                : "linear-gradient(135deg, #0EA5E9, #2563EB)",
+              color: loading || !input.trim() ? "#94A3B8" : "#FFFFFF",
+              border: "none", borderRadius: 8,
               width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center",
               cursor: loading || !input.trim() ? "not-allowed" : "pointer",
               transition: "all 0.15s",
+              boxShadow: loading || !input.trim() ? "none" : "0 2px 8px rgba(14,165,233,0.3)",
             }}
           >
-            {loading ? <Loader size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Send size={13} />}
+            {loading
+              ? <Loader size={13} style={{ animation: "spin 1s linear infinite" }} />
+              : <Send size={13} />
+            }
           </button>
         </div>
-        <div style={{ fontSize: 10, color: "#cbd5e1", marginTop: 4, textAlign: "right" }}>
+        <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 4, textAlign: "right" }}>
           Shift+Enter for new line
         </div>
       </div>
