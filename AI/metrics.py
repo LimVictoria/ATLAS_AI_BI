@@ -36,7 +36,36 @@ METRICS = {
         "y_col":           "total_cost",
     },
 
-    "cost_per_vehicle_by_month": {
+    "cost_by_vehicle_component_month": {
+        "metric_id":       "cost_by_vehicle_component_month",
+        "title":           "Cost by Vehicle, Component & Month",
+        "description":     "Maintenance cost broken down by vehicle ID, component category, month and year",
+        "category":        "Cost",
+        "sql":             """
+            SELECT plate_number                                      AS vehicle_id,
+                   brand,
+                   component_category,
+                   CAST(strftime(service_date, '%Y') AS INTEGER)    AS year,
+                   CAST(strftime(service_date, '%m') AS INTEGER)    AS month,
+                   strftime(service_date, '%Y-%m')                   AS year_month,
+                   COUNT(*)                                          AS event_count,
+                   ROUND(SUM(total_cost_myr), 2)                    AS total_cost,
+                   ROUND(SUM(parts_cost_myr), 2)                    AS parts_cost,
+                   ROUND(SUM(labour_cost_myr), 2)                   AS labour_cost
+            FROM v_maintenance_full
+            {where}
+            GROUP BY plate_number, brand, component_category, year, month, year_month
+            ORDER BY year, month, total_cost DESC
+        """,
+        "dimensions":      ["vehicle_id", "brand", "component_category", "year", "month", "year_month"],
+        "measures":        ["event_count", "total_cost", "parts_cost", "labour_cost"],
+        "default_chart":   "table",
+        "available_charts":["table"],
+        "x_col":           "vehicle_id",
+        "y_col":           "total_cost",
+    },
+
+        "cost_per_vehicle_by_month": {
         "metric_id":       "cost_per_vehicle_by_month",
         "title":           "Cost per Vehicle by Month",
         "description":     "Each vehicle's maintenance cost broken down by month and year",
