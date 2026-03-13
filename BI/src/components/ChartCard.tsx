@@ -215,22 +215,13 @@ function CodeFace({ metricId, color, light }: { metricId: string; color: string;
       </div>
       {/* Code */}
       <div style={{ flex: 1, overflow: "auto", padding: "14px 16px" }}>
-        <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.7, color: "#94A3B8", fontFamily: "'Fira Code', 'Cascadia Code', 'Courier New', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {code.split("\n").map((line, i) => {
-            // Simple syntax colouring
-            const colored = line
-              .replace(/(SELECT|FROM|WHERE|GROUP BY|ORDER BY|JOIN|LEFT|INNER|ON|AS|AND|OR|LIMIT|ROUND|SUM|COUNT|AVG|MAX|MIN|DISTINCT)/g, `<span style="color:#38BDF8">$1</span>`)
-              .replace(/('.*?')/g, `<span style="color:#86EFAC">$1</span>`)
-              .replace(/(--.*)/g, `<span style="color:#475569">$1</span>`)
-              .replace(/(import |def |class |return |for |in |if |else|and |or |not )/g, `<span style="color:#C084FC">$1</span>`)
-              .replace(/(".*?")/g, `<span style="color:#86EFAC">$1</span>`)
-            return (
-              <div key={i} style={{ display: "flex", gap: 12 }}>
-                <span style={{ color: "#334155", userSelect: "none", minWidth: 24, textAlign: "right", fontSize: 10 }}>{i + 1}</span>
-                <span dangerouslySetInnerHTML={{ __html: colored }} />
-              </div>
-            )
-          })}
+        <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: "#E2E8F0", fontFamily: "'Fira Code', 'Cascadia Code', 'Courier New', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {code.split("\n").map((line, i) => (
+            <div key={i} style={{ display: "flex", gap: 12 }}>
+              <span style={{ color: "#475569", userSelect: "none", minWidth: 24, textAlign: "right", fontSize: 10, paddingTop: 1 }}>{i + 1}</span>
+              <span style={{ color: "#E2E8F0" }}>{line}</span>
+            </div>
+          ))}
         </pre>
       </div>
       {/* Footer note */}
@@ -384,6 +375,38 @@ export default function ChartCard({ card }: Props) {
       {!flipped && showFilters && (
         <CardFilterPanel filters={card.filters || {}} color={cat.color} glass={cat.glass} onFilterChange={applyCardFilter} />
       )}
+
+      {/* ── Active filter caption ── */}
+      {!flipped && hasActiveFilters && (() => {
+        const activeFilters = Object.entries(card.filters || {})
+          .filter(([k, v]) => k !== "time_shortcut" && v && (Array.isArray(v) ? v.length > 0 : true))
+        const FILTER_COLORS: Record<string, string> = {
+          brand: "#2563EB", year: "#0891B2", quarter: "#7C3AED",
+          fleet_segment: "#059669", maintenance_type: "#D97706",
+          criticality_level: "#DC2626", workshop_state: "#0891B2",
+        }
+        return (
+          <div style={{ padding: "5px 12px 5px", display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", borderBottom: "1px solid #F1F5F9", background: "#FAFBFC" }}>
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: "#94A3B8", letterSpacing: "0.07em", marginRight: 2 }}>SHOWING</span>
+            {activeFilters.map(([key, val]) => {
+              const vals = Array.isArray(val) ? val : [val]
+              const color = FILTER_COLORS[key] || "#475569"
+              return vals.map(v => (
+                <span key={`${key}-${v}`} style={{
+                  fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+                  color: color, background: `${color}12`,
+                  border: `1px solid ${color}30`,
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                  <span style={{ opacity: 0.5, fontSize: 9 }}>{key.replace(/_/g, " ")}</span>
+                  <span>·</span>
+                  {v}
+                </span>
+              ))
+            })}
+          </div>
+        )
+      })()}
 
       {/* ── Body ── */}
       {flipped ? (
