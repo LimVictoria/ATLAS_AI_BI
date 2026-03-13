@@ -188,13 +188,21 @@ def build_board_context_prompt(board_context: BoardContext | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+STACKED_BAR_METRICS = {"cost_by_brand_and_component", "downtime_by_brand_and_component"}
+
 def execute_chart_action(action: dict) -> dict | None:
     if action.get("action") != "add_chart":
         return None
     try:
+        metric_id = action["metric_id"]
+        chart_type = action.get("chart_type")
+        # Safety remap: stacked_bar on wrong metric → swap metric
+        if chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
+            metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
+            action["metric_id"] = metric_id
         req = QueryRequest(
-            metric_id=action["metric_id"],
-            chart_type=action.get("chart_type"),
+            metric_id=metric_id,
+            chart_type=chart_type,
             filters=action.get("filters", {}),
         )
         data = run_metric(req)
