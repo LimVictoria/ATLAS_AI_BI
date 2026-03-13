@@ -28,7 +28,7 @@ METRICS = {
         "dimensions":      ["brand"],
         "measures":        ["total_cost", "event_count", "avg_cost_per_event"],
         "default_chart":   "bar",
-        "available_charts":["bar", "pie", "table", "pareto", "waterfall", "treemap"],
+        "available_charts":["bar", "pie", "table", "pareto", "waterfall", "treemap", "stacked_bar"],
         "x_col":           "brand",
         "y_col":           "total_cost",
     },
@@ -731,9 +731,9 @@ METRICS = {
         "sql":             """
             SELECT brand,
                    ROUND(MIN(total_cost_myr), 2)                                        AS cost_min,
-                   ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY total_cost_myr), 2) AS cost_q1,
-                   ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY total_cost_myr), 2) AS cost_median,
-                   ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY total_cost_myr), 2) AS cost_q3,
+                   ROUND(QUANTILE_CONT(total_cost_myr, 0.25), 2) AS cost_q1,
+                   ROUND(QUANTILE_CONT(total_cost_myr, 0.50), 2) AS cost_median,
+                   ROUND(QUANTILE_CONT(total_cost_myr, 0.75), 2) AS cost_q3,
                    ROUND(MAX(total_cost_myr), 2)                                        AS cost_max,
                    ROUND(AVG(total_cost_myr), 2)                                        AS cost_mean,
                    COUNT(*)                                                               AS event_count
