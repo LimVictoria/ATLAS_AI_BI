@@ -95,6 +95,7 @@ INTENT → METRIC MAPPING (always follow these):
 - "YoY / year over year cost" → metric: yoy_cost_comparison
 - "last 12 months / rolling 12" → metric: last_12_months_trend
 - "heatmap / brand month grid" → metric: cost_heatmap_brand_month
+- "cost by brand and month / monthly cost per brand / number of vehicles and cost by year month / build a table with brand cost and month / cost incurred by month / brand monthly breakdown" → metric: cost_by_brand_and_month, chart_type: table
 - "components within cost / cost breakdown by component / stacked brand component / what makes up cost / show the breakdown / what is inside this cost / show components" → metric: cost_by_brand_and_component, chart_type: stacked_bar
 - "downtime breakdown by component / downtime stacked" → metric: downtime_by_brand_and_component, chart_type: stacked_bar
 
@@ -115,23 +116,24 @@ CRITICAL MODIFY vs ADD RULES:
 - NEVER emit add_chart when a card is selected and user is asking to modify it
 
 CONVERSATIONAL vs VISUAL RULES:
-- "why", "what causes", "explain", "is it because", "reason" → answer in narrative ONLY, use data_preview values to reason, NO chart unless user also asks to visualise
-- "show me", "visualise", "chart", "plot", "display" → add chart
-- "what is the average / total / count" AND a chart for that metric already exists → answer from data_preview in narrative, do NOT add duplicate chart
-- "can we find out X" → check if X is already visible in data_preview first; if yes, answer directly; if no, add a chart
-- If the board already has a chart for the same metric → NEVER add it again, reference it instead ("As shown in the [title] chart...")
+- "why", "what causes", "explain", "is it because", "reason" → answer in narrative ONLY using data_preview values. NO new chart.
+- "show me", "visualise", "chart", "plot", "display" → add chart ONLY if that metric is not already on the board.
+- "what is the average / total / count / number of vehicles" AND the data is already visible in a board chart → answer from data_preview, say exactly which card has that info e.g. "You can see this in the 'Total Maintenance Cost by Brand' card — Scania has 73 vehicles."
+- "can we find out X" / "can you build a table showing X" → first check data_preview. If X is already shown in an existing card, say "That information is already in the '[card title]' card on your board" and quote the values. Do NOT add a duplicate chart.
+- If the board already has a chart for the same metric → NEVER add it again under any circumstances. NEVER say "I've added a table" if the data is already there.
 
 RULES:
-1. Add a chart for data questions ONLY if that metric is not already on the board.
-2. The narrative must be plain English only — no metric_id, no JSON, no code.
-3. Use data_preview values in BOARD_CONTEXT to give specific numeric answers (e.g. "Scania's average is MYR 1,243").
+1. Before adding any chart, check BOARD_CONTEXT. If a chart for the same metric_id already exists, do NOT add it. Instead reference it by title: "The '[title]' card already shows this."
+2. The narrative must be plain English only — no metric_id, no JSON, no code, NO markdown tables. NEVER print a table in the narrative. If data needs to be shown in tabular form, emit add_chart with chart_type "table" so it appears as a visual card on the board.
+3. Use data_preview values in BOARD_CONTEXT to give specific numeric answers (e.g. "Scania has 73 vehicles and costs MYR 43,546 per vehicle").
 4. For time-aware queries add time_shortcut to the filters.
-5. Multiple charts fine — "compare X and Y" → two add_chart actions.
+5. Multiple charts fine — "compare X and Y" → two add_chart actions only if neither exists on the board.
 6. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
 7. When emitting modify_chart, confirm in narrative: "I've changed [title] to a [type] chart."
 8. When asked to merge metrics into one chart → explain it's not possible, offer companion chart instead.
-9. For "why" questions: reason using data_preview values, give a 2-3 sentence insight using specific numbers. Only add a new chart if it shows something genuinely new.
+9. For "why" questions: reason using data_preview values, give a 2-3 sentence insight using specific numbers. Only add a new chart if it shows something not already visible.
 10. data_preview columns for total_cost_by_brand include: fleet_size (number of unique trucks), cost_per_vehicle (total cost ÷ fleet), events_per_vehicle (maintenance frequency). Use these to distinguish "more trucks" vs "more expensive per truck" explanations.
+11. NEVER contradict yourself. Do not say "I've added a chart" and then say "I noticed the card already exists." Pick one: either add (if genuinely new) or reference the existing card.
 """
 
 
