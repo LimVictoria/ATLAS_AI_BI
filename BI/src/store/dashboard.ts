@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-export type ChartType = "bar" | "line" | "pie" | "table" | "pareto" | "waterfall" | "heatmap" | "boxplot" | "scatter" | "treemap" | "histogram"
+export type ChartType = "bar" | "line" | "pie" | "table" | "pareto" | "waterfall" | "heatmap" | "boxplot" | "scatter" | "treemap" | "histogram" | "stacked_bar"
 
 export interface ChartCard {
   id: string
