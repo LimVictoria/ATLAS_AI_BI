@@ -26,35 +26,66 @@ SYSTEM_PROMPT = f"""You are ATLAS, a friendly and concise AI analyst for a fleet
 DATASET CONTEXT: Malaysian truck fleet, 2020–2024. Brands: Scania, Volvo, Mercedes-Benz, MAN, Hino.
 "This month" = Dec 2024. "Last year" = 2023. "This year" = 2024.
 
-AVAILABLE METRICS:
+AVAILABLE METRICS (metric_id → description → available_charts):
 {json.dumps(METRICS_INDEX, indent=2)}
 
 TIME SHORTCUTS: {json.dumps(list(TIME_SHORTCUTS.keys()))}
 
-CHART TYPES: bar, line, pie, table, pareto
+SUPPORTED CHART TYPES:
+- bar: comparisons between categories
+- line: trends over time
+- pie: proportions/ratios
+- table: detailed data grid
+- pareto: 80/20 analysis — bars + cumulative % line
+- waterfall: cumulative buildup / contribution breakdown
+- heatmap: 2D intensity grid (use metric: cost_heatmap_brand_month)
+- boxplot: distribution, spread, outliers (use metric: cost_distribution_by_brand)
+- scatter: correlation between two measures (use metric: cost_vs_downtime_scatter)
+- treemap: hierarchical proportions (use metric: fleet_cost_treemap or failure_count_by_component)
+- histogram: frequency distribution (use metric: downtime_histogram)
 
-PARETO RULE: Always use "pareto" chart_type when user says "pareto", "80/20", "Pareto analysis", or "which X causes most Y". Pareto shows bars + cumulative % line + 80% reference.
+CHART SELECTION RULES:
+- ONLY use a chart_type if it appears in the metric's available_charts list
+- If user requests a chart type not available for that metric, pick the closest available alternative and mention it
+- For heatmap → always use metric cost_heatmap_brand_month
+- For scatter/correlation → always use metric cost_vs_downtime_scatter
+- For boxplot/distribution → always use metric cost_distribution_by_brand
+- For treemap → use fleet_cost_treemap or failure_count_by_component
+- For waterfall → use cost_waterfall_by_category or total_cost_by_brand
+- For histogram → use downtime_histogram
 
 UI ACTIONS:
-- add_chart: show a metric on the canvas
-- add_filter: add a filter control (brand, year, month, quarter, fleet_segment, component_category, workshop_state, maintenance_type, criticality_level, date_range)
+- add_chart: show a metric visualisation on the canvas
+- modify_chart: change chart_type or filters of an existing card (requires card_id)
+- add_filter: apply a dimension filter to selected cards
 - reset_filters: clear all filters
+
+BOARD AWARENESS RULES:
+- You will receive the current board state in each message under BOARD_CONTEXT
+- Use it to answer questions like "how many charts do I have?", "what is chart X showing?", "list my charts"
+- When user says "this chart", "the selected chart", or "change it" — use the selected card from BOARD_CONTEXT
+- When asked to explain a chart: describe what the metric measures, what the data shows, and include the SQL used
+- When asked for the code: provide a clean Python + Plotly snippet the user could run independently
+
+MODIFY CHART RULES:
+- If user says "change this to X chart" and a card is selected → emit modify_chart action with that card's id and new chart_type
+- Confirm in narrative: "I've changed [chart title] to a [chart_type] chart."
+- If chart_type is not in available_charts for that metric → use closest valid type and inform user
 
 RESPONSE — return ONLY valid JSON, no markdown, no code blocks:
 {{
-  "narrative": "Your friendly conversational reply. 1-3 sentences max. Never include JSON or code in here.",
+  "narrative": "Your friendly reply. 1-3 sentences. Plain English only — no JSON, no curly braces.",
   "ui_actions": [],
   "fallback_sql": null
 }}
 
 RULES:
-1. ALWAYS add a chart when the user asks ANY data question — "which components fail most", "show cost by brand", "compare brands" all get a chart immediately.
-2. Only ask clarifying questions for genuinely ambiguous requests like "show me something interesting".
-3. If the user specifies a chart type use it. If not, pick the best one automatically (bar for comparisons, line for trends, pie for proportions).
-4. The narrative must be plain English only — friendly, concise, no JSON, no curly braces, no code.
-5. For time-aware queries add time_shortcut to the filters object.
-6. Multiple charts are fine — if user says "compare X and Y" add two add_chart actions.
-7. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
+1. ALWAYS add a chart immediately for any data question.
+2. The narrative must be plain English only.
+3. For time-aware queries add time_shortcut to the filters.
+4. Multiple charts fine — "compare X and Y" → two add_chart actions.
+5. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
+6. Never mention metric_id or technical names in the narrative — use the human title.
 """
 
 
@@ -63,10 +94,25 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class BoardCard(BaseModel):
+    id: str
+    title: str
+    metric_id: str
+    chart_type: str
+    filters: Optional[dict] = {}
+    selected: Optional[bool] = False
+
+
+class BoardContext(BaseModel):
+    charts_on_canvas: Optional[list[BoardCard]] = []
+    selected_ids: Optional[list[str]] = []
+
+
 class ChatRequest(BaseModel):
     session_id: str
     message: str
     history: Optional[list[ChatMessage]] = []
+    board_context: Optional[BoardContext] = None
 
 
 async def call_groq(messages: list[dict]) -> str:
@@ -74,10 +120,37 @@ async def call_groq(messages: list[dict]) -> str:
         response = await client.post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.1, "max_tokens": 1200},
+            json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.1, "max_tokens": 1500},
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
+
+
+def build_board_context_prompt(board_context: BoardContext | None) -> str:
+    if not board_context or not board_context.charts_on_canvas:
+        return "\nBOARD_CONTEXT: Canvas is empty — no charts yet.\n"
+
+    lines = [f"\nBOARD_CONTEXT: {len(board_context.charts_on_canvas)} chart(s) on canvas:"]
+    for c in board_context.charts_on_canvas:
+        metric = METRICS.get(c.metric_id, {})
+        selected_marker = " ← SELECTED" if c.id in (board_context.selected_ids or []) else ""
+        filters_str = json.dumps(c.filters) if c.filters else "none"
+        lines.append(
+            f"  - id={c.id} | title='{c.title}' | metric={c.metric_id} "
+            f"| chart_type={c.chart_type} | filters={filters_str}{selected_marker}"
+        )
+        if metric:
+            lines.append(f"    description: {metric.get('description','')}")
+            lines.append(f"    available_charts: {metric.get('available_charts', [])}")
+
+    selected = [c for c in board_context.charts_on_canvas if c.id in (board_context.selected_ids or [])]
+    if selected:
+        s = selected[0]
+        lines.append(f"\nSELECTED CARD: id={s.id}, title='{s.title}', metric={s.metric_id}, chart_type={s.chart_type}")
+    else:
+        lines.append("\nSELECTED CARD: none")
+
+    return "\n".join(lines) + "\n"
 
 
 def execute_chart_action(action: dict) -> dict | None:
@@ -94,6 +167,29 @@ def execute_chart_action(action: dict) -> dict | None:
     except Exception as e:
         print(f"[execute_chart_action] Error: {e}")
         return None
+
+
+def execute_modify_action(action: dict, board_context: BoardContext | None) -> dict:
+    """Validate modify_chart — ensure card_id exists and chart_type is valid."""
+    card_id = action.get("card_id")
+    new_chart_type = action.get("chart_type")
+    new_filters = action.get("filters")
+
+    if not card_id and board_context and board_context.selected_ids:
+        card_id = board_context.selected_ids[0]
+        action["card_id"] = card_id
+
+    # Validate chart type against metric
+    if card_id and board_context:
+        card = next((c for c in board_context.charts_on_canvas if c.id == card_id), None)
+        if card and new_chart_type:
+            metric = METRICS.get(card.metric_id, {})
+            available = metric.get("available_charts", [])
+            if new_chart_type not in available and available:
+                action["chart_type"] = available[0]
+                action["fallback_note"] = f"{new_chart_type} not available, using {available[0]}"
+
+    return action
 
 
 def save_message(session_id: str, role: str, content: dict):
@@ -118,17 +214,22 @@ def load_history(session_id: str) -> list[dict]:
 
 @router.post("/")
 async def chat(req: ChatRequest):
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    board_prompt = build_board_context_prompt(req.board_context)
+
+    # Inject board context into system prompt dynamically
+    dynamic_system = SYSTEM_PROMPT + board_prompt
+
+    messages = [{"role": "system", "content": dynamic_system}]
     for msg in (req.history or []):
-        messages.append({"role": msg.role,
-                         "content": msg.content if isinstance(msg.content, str)
-                                    else json.dumps(msg.content)})
+        messages.append({
+            "role": msg.role,
+            "content": msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
+        })
     messages.append({"role": "user", "content": req.message})
 
     try:
         raw = await call_groq(messages)
         clean = raw.strip()
-        # Strip markdown fences
         if clean.startswith("```"):
             lines = clean.split("\n")
             clean = "\n".join(lines[1:])
@@ -136,15 +237,13 @@ async def chat(req: ChatRequest):
                 clean = clean[:-3]
         parsed = json.loads(clean.strip())
     except json.JSONDecodeError:
-        # If LLM returns plain text, wrap it
         parsed = {"narrative": raw.strip(), "ui_actions": [], "fallback_sql": None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Sanitise narrative — strip any JSON leakage
+    # Sanitise narrative
     narrative = parsed.get("narrative", "")
     if "{" in narrative and "}" in narrative:
-        # Extract only the text before any JSON
         narrative = narrative.split("{")[0].strip()
         if not narrative:
             narrative = "Here is the data you requested."
@@ -154,12 +253,14 @@ async def chat(req: ChatRequest):
         if action.get("action") == "add_chart":
             result = execute_chart_action(action)
             enriched_actions.append(result or action)
+        elif action.get("action") == "modify_chart":
+            enriched_actions.append(execute_modify_action(action, req.board_context))
         else:
             enriched_actions.append(action)
 
     response = {
-        "narrative":   narrative,
-        "ui_actions":  enriched_actions,
+        "narrative":    narrative,
+        "ui_actions":   enriched_actions,
         "fallback_sql": parsed.get("fallback_sql"),
     }
 
