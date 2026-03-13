@@ -28,7 +28,7 @@ METRICS = {
         "dimensions":      ["brand"],
         "measures":        ["total_cost", "event_count", "avg_cost_per_event"],
         "default_chart":   "bar",
-        "available_charts":["bar", "pie", "table"],
+        "available_charts":["bar", "pie", "table", "pareto", "waterfall", "treemap"],
         "x_col":           "brand",
         "y_col":           "total_cost",
     },
@@ -52,7 +52,7 @@ METRICS = {
         "dimensions":      ["component_category"],
         "measures":        ["total_cost", "parts_cost", "labour_cost", "event_count"],
         "default_chart":   "bar",
-        "available_charts":["bar", "pie", "table"],
+        "available_charts":["bar", "pie", "table", "pareto", "waterfall", "treemap"],
         "x_col":           "component_category",
         "y_col":           "total_cost",
     },
@@ -75,7 +75,7 @@ METRICS = {
         "dimensions":      ["fleet_segment"],
         "measures":        ["total_cost", "truck_count", "cost_per_truck"],
         "default_chart":   "bar",
-        "available_charts":["bar", "pie", "table"],
+        "available_charts":["bar", "pie", "table", "waterfall", "treemap"],
         "x_col":           "fleet_segment",
         "y_col":           "total_cost",
     },
@@ -99,7 +99,7 @@ METRICS = {
         "dimensions":      ["workshop_name", "workshop_type"],
         "measures":        ["total_cost", "event_count"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto"],
         "x_col":           "workshop_name",
         "y_col":           "total_cost",
     },
@@ -124,7 +124,7 @@ METRICS = {
         "dimensions":      ["year_month", "month_name"],
         "measures":        ["total_cost", "event_count", "avg_cost"],
         "default_chart":   "line",
-        "available_charts":["line", "bar", "table"],
+        "available_charts":["line", "bar", "table", "histogram"],
         "x_col":           "year_month",
         "y_col":           "total_cost",
     },
@@ -147,7 +147,7 @@ METRICS = {
         "dimensions":      ["component_category"],
         "measures":        ["parts_cost", "labour_cost", "total_cost"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "waterfall"],
         "x_col":           "component_category",
         "y_col":           "total_cost",
     },
@@ -172,7 +172,7 @@ METRICS = {
         "dimensions":      ["component_category"],
         "measures":        ["avg_downtime", "total_downtime", "event_count"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto", "waterfall"],
         "x_col":           "component_category",
         "y_col":           "avg_downtime",
     },
@@ -197,7 +197,7 @@ METRICS = {
         "dimensions":      ["failure_type"],
         "measures":        ["avg_downtime", "total_downtime", "occurrences"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto"],
         "x_col":           "failure_type",
         "y_col":           "avg_downtime",
     },
@@ -220,7 +220,7 @@ METRICS = {
         "dimensions":      ["brand"],
         "measures":        ["avg_downtime", "total_downtime", "event_count"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "boxplot"],
         "x_col":           "brand",
         "y_col":           "avg_downtime",
     },
@@ -271,7 +271,7 @@ METRICS = {
         "dimensions":      ["component_name", "component_category"],
         "measures":        ["failure_count", "avg_repair_cost"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto", "treemap"],
         "x_col":           "component_name",
         "y_col":           "failure_count",
     },
@@ -295,7 +295,7 @@ METRICS = {
         "dimensions":      ["brand"],
         "measures":        ["failure_count", "truck_count", "failures_per_truck"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto"],
         "x_col":           "brand",
         "y_col":           "failures_per_truck",
     },
@@ -343,7 +343,7 @@ METRICS = {
         "dimensions":      ["failure_type"],
         "measures":        ["occurrences", "avg_cost", "avg_downtime"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto"],
         "x_col":           "failure_type",
         "y_col":           "occurrences",
     },
@@ -394,7 +394,7 @@ METRICS = {
         "dimensions":      ["brand"],
         "measures":        ["truck_count", "avg_mileage", "cost_per_truck"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "scatter"],
         "x_col":           "brand",
         "y_col":           "truck_count",
     },
@@ -416,7 +416,7 @@ METRICS = {
         "dimensions":      ["fleet_segment"],
         "measures":        ["truck_count", "avg_mileage"],
         "default_chart":   "pie",
-        "available_charts":["pie", "bar", "table"],
+        "available_charts":["pie", "bar", "table", "treemap"],
         "x_col":           "fleet_segment",
         "y_col":           "truck_count",
     },
@@ -440,7 +440,7 @@ METRICS = {
         "dimensions":      ["year_manufactured", "truck_age_years"],
         "measures":        ["cost_per_truck", "avg_downtime", "truck_count"],
         "default_chart":   "line",
-        "available_charts":["line", "bar", "table"],
+        "available_charts":["line", "bar", "table", "scatter"],
         "x_col":           "truck_age_years",
         "y_col":           "cost_per_truck",
     },
@@ -490,7 +490,7 @@ METRICS = {
         "dimensions":      ["workshop_name", "workshop_type"],
         "measures":        ["repair_count", "total_revenue", "avg_downtime"],
         "default_chart":   "bar",
-        "available_charts":["bar", "table"],
+        "available_charts":["bar", "table", "pareto"],
         "x_col":           "workshop_name",
         "y_col":           "repair_count",
     },
@@ -538,7 +538,7 @@ METRICS = {
         "dimensions":      ["region"],
         "measures":        ["event_count", "total_cost", "avg_cost"],
         "default_chart":   "bar",
-        "available_charts":["bar", "pie", "table"],
+        "available_charts":["bar", "pie", "table", "treemap"],
         "x_col":           "region",
         "y_col":           "total_cost",
     },
@@ -561,9 +561,10 @@ METRICS = {
             GROUP BY year ORDER BY year
         """,
         "dimensions": ["year"], "measures": ["total_cost","event_count","avg_cost"],
-        "default_chart": "bar", "available_charts": ["bar","line","table"],
+        "default_chart": "bar", "available_charts": ["bar","line","table","waterfall"],
         "x_col": "year", "y_col": "total_cost",
     },
+
     "yoy_failure_comparison": {
         "metric_id":       "yoy_failure_comparison",
         "title":           "Year-over-Year Failure Comparison",
@@ -583,6 +584,7 @@ METRICS = {
         "default_chart": "bar", "available_charts": ["bar","line","table"],
         "x_col": "year", "y_col": "total_failures",
     },
+
     "qoq_cost_comparison": {
         "metric_id":       "qoq_cost_comparison",
         "title":           "Quarter-over-Quarter Cost Comparison",
@@ -601,6 +603,7 @@ METRICS = {
         "default_chart": "line", "available_charts": ["line","bar","table"],
         "x_col": "year_quarter", "y_col": "total_cost",
     },
+
     "last_12_months_trend": {
         "metric_id":       "last_12_months_trend",
         "title":           "Last 12 Months Cost Trend",
@@ -621,6 +624,7 @@ METRICS = {
         "default_chart": "line", "available_charts": ["line","bar","table"],
         "x_col": "year_month", "y_col": "total_cost",
     },
+
     "same_quarter_last_year": {
         "metric_id":       "same_quarter_last_year",
         "title":           "This Quarter vs Same Quarter Last Year",
@@ -645,6 +649,7 @@ METRICS = {
         "default_chart": "bar", "available_charts": ["bar","table"],
         "x_col": "period", "y_col": "total_cost",
     },
+
     "cost_growth_rate": {
         "metric_id":       "cost_growth_rate",
         "title":           "Annual Cost Growth Rate (%)",
@@ -664,6 +669,153 @@ METRICS = {
         "dimensions": ["year"], "measures": ["total_cost","prev_year_cost","growth_pct"],
         "default_chart": "bar", "available_charts": ["bar","line","table"],
         "x_col": "year", "y_col": "growth_pct",
+    },
+
+    # ── New Specialist Metrics ────────────────────────────────────────────────
+
+    "cost_heatmap_brand_month": {
+        "metric_id":       "cost_heatmap_brand_month",
+        "title":           "Cost Heatmap: Brand × Month",
+        "description":     "Monthly cost intensity grid — spot seasonal patterns per brand",
+        "category":        "Cost",
+        "sql":             """
+            SELECT brand,
+                   month_name,
+                   month,
+                   ROUND(SUM(total_cost_myr), 2) AS total_cost
+            FROM v_maintenance_full
+            {where}
+            GROUP BY brand, month, month_name
+            ORDER BY brand, month
+        """,
+        "dimensions":      ["brand", "month_name"],
+        "measures":        ["total_cost"],
+        "default_chart":   "heatmap",
+        "available_charts":["heatmap", "table"],
+        "x_col":           "month_name",
+        "y_col":           "brand",
+        "z_col":           "total_cost",
+    },
+
+    "cost_vs_downtime_scatter": {
+        "metric_id":       "cost_vs_downtime_scatter",
+        "title":           "Cost vs Downtime by Brand",
+        "description":     "Scatter plot revealing relationship between repair cost and downtime per brand",
+        "category":        "Cost",
+        "sql":             """
+            SELECT brand,
+                   ROUND(AVG(total_cost_myr), 2)  AS avg_cost,
+                   ROUND(AVG(downtime_hours), 2)   AS avg_downtime,
+                   COUNT(*)                         AS event_count,
+                   ROUND(SUM(total_cost_myr), 2)   AS total_cost
+            FROM v_maintenance_full
+            {where}
+            GROUP BY brand
+            ORDER BY avg_cost DESC
+        """,
+        "dimensions":      ["brand"],
+        "measures":        ["avg_cost", "avg_downtime", "event_count"],
+        "default_chart":   "scatter",
+        "available_charts":["scatter", "bar", "table"],
+        "x_col":           "avg_downtime",
+        "y_col":           "avg_cost",
+        "label_col":       "brand",
+        "size_col":        "event_count",
+    },
+
+    "cost_distribution_by_brand": {
+        "metric_id":       "cost_distribution_by_brand",
+        "title":           "Cost Distribution by Brand",
+        "description":     "Box plot showing cost spread, median, and outliers per brand",
+        "category":        "Cost",
+        "sql":             """
+            SELECT brand,
+                   ROUND(MIN(total_cost_myr), 2)                                        AS cost_min,
+                   ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY total_cost_myr), 2) AS cost_q1,
+                   ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY total_cost_myr), 2) AS cost_median,
+                   ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY total_cost_myr), 2) AS cost_q3,
+                   ROUND(MAX(total_cost_myr), 2)                                        AS cost_max,
+                   ROUND(AVG(total_cost_myr), 2)                                        AS cost_mean,
+                   COUNT(*)                                                               AS event_count
+            FROM v_maintenance_full
+            {where}
+            GROUP BY brand
+            ORDER BY cost_median DESC
+        """,
+        "dimensions":      ["brand"],
+        "measures":        ["cost_min","cost_q1","cost_median","cost_q3","cost_max"],
+        "default_chart":   "boxplot",
+        "available_charts":["boxplot", "bar", "table"],
+        "x_col":           "brand",
+        "y_col":           "cost_median",
+    },
+
+    "cost_waterfall_by_category": {
+        "metric_id":       "cost_waterfall_by_category",
+        "title":           "Cost Waterfall by Component Category",
+        "description":     "Cumulative cost buildup — see how each category contributes to total",
+        "category":        "Cost",
+        "sql":             """
+            SELECT component_category,
+                   ROUND(SUM(total_cost_myr), 2) AS total_cost
+            FROM v_maintenance_full
+            {where}
+            GROUP BY component_category
+            ORDER BY total_cost DESC
+        """,
+        "dimensions":      ["component_category"],
+        "measures":        ["total_cost"],
+        "default_chart":   "waterfall",
+        "available_charts":["waterfall", "bar", "table"],
+        "x_col":           "component_category",
+        "y_col":           "total_cost",
+    },
+
+    "fleet_cost_treemap": {
+        "metric_id":       "fleet_cost_treemap",
+        "title":           "Fleet Cost Treemap",
+        "description":     "Hierarchical cost view: brand → fleet segment",
+        "category":        "Fleet",
+        "sql":             """
+            SELECT brand,
+                   fleet_segment,
+                   ROUND(SUM(total_cost_myr), 2) AS total_cost,
+                   COUNT(*) AS event_count
+            FROM v_maintenance_full
+            {where}
+            GROUP BY brand, fleet_segment
+            ORDER BY total_cost DESC
+        """,
+        "dimensions":      ["brand", "fleet_segment"],
+        "measures":        ["total_cost", "event_count"],
+        "default_chart":   "treemap",
+        "available_charts":["treemap", "bar", "table"],
+        "x_col":           "fleet_segment",
+        "y_col":           "total_cost",
+        "parent_col":      "brand",
+    },
+
+    "downtime_histogram": {
+        "metric_id":       "downtime_histogram",
+        "title":           "Downtime Hours Distribution",
+        "description":     "Histogram showing how downtime hours are distributed across all events",
+        "category":        "Downtime",
+        "sql":             """
+            SELECT ROUND(downtime_hours, 1) AS downtime_bucket,
+                   COUNT(*) AS event_count,
+                   brand
+            FROM v_maintenance_full
+            {where}
+            AND downtime_hours IS NOT NULL AND downtime_hours > 0
+            GROUP BY ROUND(downtime_hours, 1), brand
+            ORDER BY downtime_bucket
+        """,
+        "dimensions":      ["downtime_bucket", "brand"],
+        "measures":        ["event_count"],
+        "default_chart":   "histogram",
+        "available_charts":["histogram", "table"],
+        "x_col":           "downtime_bucket",
+        "y_col":           "event_count",
     },
 }
 
@@ -686,7 +838,6 @@ FILTER_DIMENSIONS = {
 
 
 # ── Time Shortcut Registry ────────────────────────────────────────────────────
-# Agent uses this when user says "last month", "this quarter", "last year" etc.
 
 TIME_SHORTCUTS = {
     "last_month":     {"label": "Last Month",      "sql_filter": "full_date >= DATE_TRUNC('month', (SELECT MAX(full_date) FROM v_maintenance_full)) - INTERVAL 1 MONTH AND full_date < DATE_TRUNC('month', (SELECT MAX(full_date) FROM v_maintenance_full))",  "examples": ["last month","previous month"]},
@@ -710,7 +861,6 @@ def build_where(filters: dict) -> str:
     for dim, value in filters.items():
         if not value:
             continue
-        # Time shortcut — inject directly
         if dim == "time_shortcut" and value in TIME_SHORTCUTS:
             clauses.append(TIME_SHORTCUTS[value]["sql_filter"])
             continue
@@ -741,6 +891,7 @@ def get_metric_sql(metric_id: str, filters: dict = None) -> str | None:
 def get_metrics_index() -> list[dict]:
     return [
         {"metric_id": m["metric_id"], "title": m["title"],
-         "description": m["description"], "category": m["category"]}
+         "description": m["description"], "category": m["category"],
+         "available_charts": m.get("available_charts", [])}
         for m in METRICS.values()
     ]
