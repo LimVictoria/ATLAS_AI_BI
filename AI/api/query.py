@@ -27,17 +27,19 @@ PALETTES = {
 BASE = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter, system-ui, -apple-system, sans-serif", color="#334155", size=11),
-    margin=dict(t=12, r=20, b=50, l=62),
+    font=dict(family="Inter, system-ui, -apple-system, sans-serif", color="#1E293B", size=12),
+    margin=dict(t=12, r=20, b=60, l=70),
     xaxis=dict(
         gridcolor="#F1F5F9", gridwidth=1, zeroline=False,
-        linecolor="#E2E8F0", tickfont=dict(size=10, color="#64748B"),
-        title_font=dict(size=11, color="#94A3B8"),
+        linecolor="#E2E8F0", tickfont=dict(size=11, color="#1E293B"),
+        title_font=dict(size=12, color="#0F172A", family="Inter, system-ui, sans-serif"),
+        title_standoff=12,
     ),
     yaxis=dict(
         gridcolor="#F1F5F9", gridwidth=1, zeroline=False,
-        linecolor="#E2E8F0", tickfont=dict(size=10, color="#64748B"),
-        title_font=dict(size=11, color="#94A3B8"),
+        linecolor="#E2E8F0", tickfont=dict(size=11, color="#1E293B"),
+        title_font=dict(size=12, color="#0F172A", family="Inter, system-ui, sans-serif"),
+        title_standoff=12,
     ),
     hoverlabel=dict(
         bgcolor="#1E293B", font_color="#F8FAFC",
@@ -47,7 +49,7 @@ BASE = dict(
     legend=dict(
         orientation="h", yanchor="bottom", y=1.0,
         xanchor="right", x=1,
-        font=dict(size=10, color="#64748B"),
+        font=dict(size=11, color="#1E293B"),
         bgcolor="rgba(0,0,0,0)",
     ),
     bargap=0.28,
@@ -87,6 +89,10 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
         fig.update_layout(**BASE)
+        fig.update_layout(
+            xaxis_title=x_col.replace("_", " ").title() if x_col else "",
+            yaxis_title=y_col.replace("_", " ").title() if y_col else "",
+        )
 
     # ── Line ─────────────────────────────────────────────────────────────────
     elif chart_type == "line":
@@ -103,6 +109,10 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
         fig.update_layout(**BASE)
+        fig.update_layout(
+            xaxis_title=x_col.replace("_", " ").title() if x_col else "",
+            yaxis_title=y_col.replace("_", " ").title() if y_col else "",
+        )
 
     # ── Pie / Donut ───────────────────────────────────────────────────────────
     elif chart_type == "pie":
@@ -212,6 +222,10 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             hovertemplate="<b>%{x}</b><br>Value: <b>%{y:,.1f}</b><extra></extra>",
         ))
         fig.update_layout(**BASE)
+        fig.update_layout(
+            xaxis_title=x_col.replace("_", " ").title() if x_col else "",
+            yaxis_title=y_col.replace("_", " ").title() if y_col else "",
+        )
 
     # ── Heatmap ───────────────────────────────────────────────────────────────
     elif chart_type == "heatmap":
@@ -356,6 +370,10 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             hovertemplate="<b>%{x}</b><br>Count: <b>%{y}</b><extra></extra>",
         ))
         fig.update_layout(**{**BASE, "bargap": 0.05})
+        fig.update_layout(
+            xaxis_title=x_col.replace("_", " ").title() if x_col else "Downtime Range",
+            yaxis_title="Frequency",
+        )
 
     else:
         return _build_chart(df, metric, "bar")
@@ -441,10 +459,12 @@ def _build_chart(df, metric, chart_type):
 
         stacked_layout = {**BASE}
         stacked_layout["barmode"] = "stack"
+        stacked_layout["xaxis_title"] = x_col.replace("_", " ").title() if x_col else "Brand"
+        stacked_layout["yaxis_title"] = y_col.replace("_", " ").title() if y_col else "Total Cost (MYR)"
         stacked_layout["legend"] = dict(
             orientation="h", yanchor="bottom", y=1.02,
             xanchor="right", x=1,
-            font=dict(size=9, color="#64748B"),
+            font=dict(size=11, color="#1E293B"),
             bgcolor="rgba(0,0,0,0)",
         )
         fig.update_layout(**stacked_layout)
