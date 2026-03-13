@@ -43,6 +43,7 @@ SUPPORTED CHART TYPES:
 - scatter: correlation between two measures (use metric: cost_vs_downtime_scatter)
 - treemap: hierarchical proportions (use metric: fleet_cost_treemap or failure_count_by_component)
 - histogram: frequency distribution (use metric: downtime_histogram)
+- stacked_bar: breakdown of a total into sub-components (use metric: cost_by_brand_and_component or downtime_by_brand_and_component)
 
 CHART SELECTION RULES:
 - ONLY use a chart_type if it appears in the metric's available_charts list
@@ -93,6 +94,8 @@ INTENT → METRIC MAPPING (always follow these):
 - "YoY / year over year cost" → metric: yoy_cost_comparison
 - "last 12 months / rolling 12" → metric: last_12_months_trend
 - "heatmap / brand month grid" → metric: cost_heatmap_brand_month
+- "components within cost / cost breakdown by component / stacked brand component / what makes up cost" → metric: cost_by_brand_and_component, chart_type: stacked_bar
+- "downtime breakdown by component / downtime stacked" → metric: downtime_by_brand_and_component, chart_type: stacked_bar
 - "scatter / cost vs downtime / correlation" → metric: cost_vs_downtime_scatter
 - "boxplot / distribution / cost spread" → metric: cost_distribution_by_brand
 - "waterfall / cost buildup / cumulative cost" → metric: cost_waterfall_by_category
