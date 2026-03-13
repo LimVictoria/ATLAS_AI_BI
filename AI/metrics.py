@@ -36,8 +36,66 @@ METRICS = {
         "y_col":           "total_cost",
     },
 
-    "total_cost_by_component_category": {
-        "metric_id":       "total_cost_by_component_category",
+    "cost_by_brand_and_month": {
+        "metric_id":       "cost_by_brand_and_month",
+        "title":           "Cost by Brand and Month",
+        "description":     "Monthly maintenance cost per truck brand with fleet size",
+        "category":        "Cost",
+        "sql":             """
+            SELECT brand,
+                   CAST(strftime(service_date, '%Y') AS INTEGER)   AS year,
+                   CAST(strftime(service_date, '%m') AS INTEGER)   AS month,
+                   strftime(service_date, '%Y-%m')                  AS year_month,
+                   COUNT(DISTINCT plate_number)                     AS fleet_size,
+                   COUNT(*)                                         AS event_count,
+                   ROUND(SUM(total_cost_myr), 2)                   AS total_cost,
+                   ROUND(AVG(total_cost_myr), 2)                   AS avg_cost_per_event,
+                   ROUND(SUM(total_cost_myr) / NULLIF(COUNT(DISTINCT plate_number), 0), 2) AS cost_per_vehicle
+            FROM v_maintenance_full
+            {where}
+            GROUP BY brand, year, month, year_month
+            ORDER BY brand, year, month
+        """,
+        "dimensions":      ["brand", "year", "month", "year_month"],
+        "measures":        ["fleet_size", "event_count", "total_cost", "avg_cost_per_event", "cost_per_vehicle"],
+        "default_chart":   "table",
+        "available_charts":["table", "line", "bar", "heatmap"],
+        "x_col":           "year_month",
+        "y_col":           "total_cost",
+        "group_col":       "brand",
+    },
+
+        "total_cost_by_component_category": {
+        "metric_id":       "cost_by_brand_and_month": {
+        "metric_id":       "cost_by_brand_and_month",
+        "title":           "Cost by Brand and Month",
+        "description":     "Monthly maintenance cost per truck brand with fleet size",
+        "category":        "Cost",
+        "sql":             """
+            SELECT brand,
+                   CAST(strftime(service_date, '%Y') AS INTEGER)   AS year,
+                   CAST(strftime(service_date, '%m') AS INTEGER)   AS month,
+                   strftime(service_date, '%Y-%m')                  AS year_month,
+                   COUNT(DISTINCT plate_number)                     AS fleet_size,
+                   COUNT(*)                                         AS event_count,
+                   ROUND(SUM(total_cost_myr), 2)                   AS total_cost,
+                   ROUND(AVG(total_cost_myr), 2)                   AS avg_cost_per_event,
+                   ROUND(SUM(total_cost_myr) / NULLIF(COUNT(DISTINCT plate_number), 0), 2) AS cost_per_vehicle
+            FROM v_maintenance_full
+            {where}
+            GROUP BY brand, year, month, year_month
+            ORDER BY brand, year, month
+        """,
+        "dimensions":      ["brand", "year", "month", "year_month"],
+        "measures":        ["fleet_size", "event_count", "total_cost", "avg_cost_per_event", "cost_per_vehicle"],
+        "default_chart":   "table",
+        "available_charts":["table", "line", "bar", "heatmap"],
+        "x_col":           "year_month",
+        "y_col":           "total_cost",
+        "group_col":       "brand",
+    },
+
+        "total_cost_by_component_category",
         "title":           "Total Maintenance Cost by Component Category",
         "description":     "Which component categories cost the most to maintain",
         "category":        "Cost",
