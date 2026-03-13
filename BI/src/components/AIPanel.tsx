@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Send, Trash2, Loader, Sparkles } from "lucide-react"
+import { Send, Loader, Sparkles } from "lucide-react"
 import { v4 as uuid } from "uuid"
 import { useDashboardStore } from "@/store/dashboard"
 import { sendChat, clearChatHistory } from "@/utils/api"
@@ -123,17 +123,7 @@ export default function AIPanel() {
                 </div>
               </div>
             )}
-            <button onClick={handleClear} title="Clear chat" style={{
-              background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 8, cursor: "pointer", color: "#64748B",
-              width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all 0.15s",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "#94A3B8" }}
-              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "#64748B" }}
-            >
-              <Trash2 size={12} />
-            </button>
+
           </div>
         </div>
 
@@ -163,36 +153,33 @@ export default function AIPanel() {
       </div>
 
       {/* ── Suggestions ── */}
-      {messages.length === 0 && (
-        <div style={{ padding: "16px 16px 8px", flexShrink: 0 }}>
-          <p style={{ fontSize: 11.5, color: "#64748B", marginBottom: 10, lineHeight: 1.6 }}>
-            Ask about costs, failures, downtime, or workshops. Select a chart to modify it.
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {SUGGESTIONS.map((s, i) => (
-              <button key={s} onClick={() => send(s)} style={{
-                padding: "5px 10px",
-                border: `1px solid ${MSG_ACCENTS[i % MSG_ACCENTS.length]}30`,
-                borderRadius: 99, fontSize: 11,
-                color: MSG_ACCENTS[i % MSG_ACCENTS.length],
-                background: `${MSG_ACCENTS[i % MSG_ACCENTS.length]}08`,
-                cursor: "pointer", transition: "all 0.12s", whiteSpace: "nowrap",
+      {/* ── Persistent suggestions ── */}
+      <div style={{ padding: "10px 14px 6px", flexShrink: 0, borderBottom: "1px solid #F1F5F9" }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.06em", marginBottom: 6 }}>QUICK ASKS</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {SUGGESTIONS.map((s, i) => (
+            <button key={s} onClick={() => send(s)} style={{
+              padding: "4px 9px",
+              border: `1px solid ${MSG_ACCENTS[i % MSG_ACCENTS.length]}28`,
+              borderRadius: 99, fontSize: 10.5,
+              color: MSG_ACCENTS[i % MSG_ACCENTS.length],
+              background: `${MSG_ACCENTS[i % MSG_ACCENTS.length]}07`,
+              cursor: "pointer", transition: "all 0.12s", whiteSpace: "nowrap", fontWeight: 500,
+            }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}16`
+                e.currentTarget.style.borderColor = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}55`
               }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}18`
-                  e.currentTarget.style.borderColor = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}60`
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}08`
-                  e.currentTarget.style.borderColor = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}30`
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
+              onMouseLeave={e => {
+                e.currentTarget.style.background = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}07`
+                e.currentTarget.style.borderColor = `${MSG_ACCENTS[i % MSG_ACCENTS.length]}28`
+              }}
+            >
+              {s}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
       {/* ── Messages ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
