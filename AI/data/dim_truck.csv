@@ -1,0 +1,201 @@
+truck_id,plate_number,model,brand,year_manufactured,engine_type,gross_weight_kg,fleet_segment,home_state,purchase_date,current_mileage_km,is_active
+TRK-0001,FD2679,Scania R500,Scania,2015,Euro 6,44000,Long Haul,Pahang,2015-12-09,492417,False
+TRK-0002,QP9928,Scania R500,Scania,2018,Euro 6,44000,Heavy Haulage,Perak,2018-04-17,521029,True
+TRK-0003,JD6514,Scania R450,Scania,2017,Euro 6,44000,Long Haul,Johor,2017-12-14,448382,True
+TRK-0004,MC7201,Volvo FM,Volvo,2019,Euro 5,40000,Long Haul,Kedah,2019-01-24,357419,True
+TRK-0005,SB4733,Hino 700,Hino,2020,Euro 5,25000,Urban Delivery,Johor,2020-10-07,294098,True
+TRK-0006,WD6820,Mercedes Actros 1845,Mercedes-Benz,2019,Euro 6,44000,Regional,Sabah,2019-08-21,785911,True
+TRK-0007,FM5422,Scania R500,Scania,2017,Euro 6,44000,Regional,Sarawak,2017-09-24,108655,True
+TRK-0008,BX6155,Scania R450,Scania,2020,Euro 6,44000,Regional,Negeri Sembilan,2020-07-09,464850,True
+TRK-0009,FP5304,Mercedes Actros 1852,Mercedes-Benz,2017,Euro 6,44000,Heavy Haulage,Pahang,2017-05-05,468801,True
+TRK-0010,UW3504,Scania G410,Scania,2023,Euro 5,40000,Regional,Kuala Lumpur,2023-08-03,675380,True
+TRK-0011,ZW1188,Mercedes Actros 1845,Mercedes-Benz,2022,Euro 6,44000,Long Haul,Kedah,2022-09-09,329786,True
+TRK-0012,DA5315,Volvo FM,Volvo,2016,Euro 5,40000,Regional,Kedah,2016-05-14,161579,True
+TRK-0013,DU9837,Volvo FH16,Volvo,2023,Euro 6,44000,Long Haul,Pahang,2023-10-07,389902,True
+TRK-0014,BX2290,Scania R500,Scania,2020,Euro 6,44000,Long Haul,Negeri Sembilan,2020-05-08,122574,True
+TRK-0015,MP5342,MAN TGX 26.480,MAN,2017,Euro 6,44000,Heavy Haulage,Perak,2017-03-22,615492,True
+TRK-0016,RL9479,Scania P360,Scania,2019,Euro 5,32000,Heavy Haulage,Johor,2019-07-22,309947,True
+TRK-0017,FF2163,Volvo FM,Volvo,2015,Euro 5,40000,Long Haul,Perak,2015-10-18,120674,True
+TRK-0018,GM9834,Volvo FM,Volvo,2016,Euro 5,40000,Regional,Pahang,2016-09-08,654201,True
+TRK-0019,CL7939,Mercedes Actros 1852,Mercedes-Benz,2021,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2021-04-04,106802,True
+TRK-0020,JW5073,Scania R500,Scania,2015,Euro 6,44000,Regional,Perak,2015-07-24,612336,True
+TRK-0021,FY8260,Mercedes Actros 1845,Mercedes-Benz,2017,Euro 6,44000,Long Haul,Selangor,2017-05-15,733823,True
+TRK-0022,KM7570,Scania R450,Scania,2016,Euro 6,44000,Long Haul,Penang,2016-04-06,447382,False
+TRK-0023,LY8973,Mercedes Actros 1845,Mercedes-Benz,2019,Euro 6,44000,Regional,Perak,2019-08-10,361120,True
+TRK-0024,HB8811,Scania R450,Scania,2023,Euro 6,44000,Regional,Selangor,2023-01-24,582496,True
+TRK-0025,SF2964,Scania G410,Scania,2016,Euro 5,40000,Regional,Pahang,2016-10-03,673398,False
+TRK-0026,PH5272,Scania R500,Scania,2021,Euro 6,44000,Regional,Sarawak,2021-11-19,300280,True
+TRK-0027,YY1152,Scania G410,Scania,2019,Euro 5,40000,Heavy Haulage,Pahang,2019-08-11,640341,True
+TRK-0028,GY2127,Scania R500,Scania,2023,Euro 6,44000,Regional,Sarawak,2023-04-17,348830,True
+TRK-0029,RA5905,MAN TGX 26.480,MAN,2019,Euro 6,44000,Long Haul,Penang,2019-10-26,327312,True
+TRK-0030,GF6617,Scania R500,Scania,2023,Euro 6,44000,Regional,Sabah,2023-03-09,579959,True
+TRK-0031,VB6464,Scania R450,Scania,2016,Euro 6,44000,Regional,Sabah,2016-11-14,219430,True
+TRK-0032,CY3442,MAN TGX 26.480,MAN,2021,Euro 6,44000,Long Haul,Sarawak,2021-09-01,660805,True
+TRK-0033,JY1653,Mercedes Actros 1845,Mercedes-Benz,2017,Euro 6,44000,Urban Delivery,Perak,2017-01-10,765198,True
+TRK-0034,KQ3532,Scania R500,Scania,2020,Euro 6,44000,Regional,Penang,2020-09-28,235652,True
+TRK-0035,UK5065,Scania R450,Scania,2017,Euro 6,44000,Urban Delivery,Penang,2017-12-11,785343,True
+TRK-0036,VM6000,Scania R450,Scania,2022,Euro 6,44000,Regional,Perak,2022-04-07,74813,True
+TRK-0037,BU6753,Mercedes Actros 1845,Mercedes-Benz,2020,Euro 6,44000,Heavy Haulage,Kedah,2020-05-28,397235,True
+TRK-0038,ZG2776,Scania R500,Scania,2019,Euro 6,44000,Heavy Haulage,Sarawak,2019-03-19,378914,True
+TRK-0039,EB8144,MAN TGX 26.480,MAN,2016,Euro 6,44000,Long Haul,Kedah,2016-07-19,614607,True
+TRK-0040,YY6143,Scania P360,Scania,2020,Euro 5,32000,Long Haul,Sabah,2020-07-03,581756,True
+TRK-0041,HD7888,Mercedes Actros 1845,Mercedes-Benz,2020,Euro 6,44000,Heavy Haulage,Penang,2020-07-23,695414,True
+TRK-0042,GL6279,Mercedes Actros 1845,Mercedes-Benz,2023,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2023-01-10,513638,True
+TRK-0043,RG6491,MAN TGX 26.480,MAN,2022,Euro 6,44000,Long Haul,Perak,2022-12-06,755477,True
+TRK-0044,FM2193,Scania P360,Scania,2017,Euro 5,32000,Heavy Haulage,Kuala Lumpur,2017-01-02,710356,True
+TRK-0045,DS2746,Mercedes Actros 1845,Mercedes-Benz,2022,Euro 6,44000,Heavy Haulage,Perak,2022-07-08,234430,True
+TRK-0046,FW8478,MAN TGX 26.480,MAN,2022,Euro 6,44000,Regional,Negeri Sembilan,2022-01-18,750005,True
+TRK-0047,VX7991,MAN TGX 26.480,MAN,2020,Euro 6,44000,Heavy Haulage,Penang,2020-08-20,547732,True
+TRK-0048,RG2269,Scania P360,Scania,2019,Euro 5,32000,Urban Delivery,Perak,2019-09-16,334913,True
+TRK-0049,FS4505,MAN TGX 26.480,MAN,2016,Euro 6,44000,Long Haul,Kuala Lumpur,2016-03-05,477398,True
+TRK-0050,VK1320,Mercedes Actros 1852,Mercedes-Benz,2021,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2021-01-07,56182,True
+TRK-0051,TP4613,Volvo FH16,Volvo,2021,Euro 6,44000,Heavy Haulage,Perak,2021-07-18,336193,True
+TRK-0052,SK3704,Scania R450,Scania,2021,Euro 6,44000,Heavy Haulage,Penang,2021-06-22,702483,True
+TRK-0053,LW3977,Mercedes Actros 1845,Mercedes-Benz,2015,Euro 6,44000,Long Haul,Sabah,2015-02-21,447519,True
+TRK-0054,XG7906,Mercedes Actros 1852,Mercedes-Benz,2020,Euro 6,44000,Urban Delivery,Johor,2020-06-25,543152,False
+TRK-0055,RU1659,MAN TGX 26.480,MAN,2015,Euro 6,44000,Long Haul,Perak,2015-06-08,259044,True
+TRK-0056,MC4571,Hino 700,Hino,2017,Euro 5,25000,Heavy Haulage,Sabah,2017-04-05,436814,True
+TRK-0057,CA6111,Hino 700,Hino,2016,Euro 5,25000,Heavy Haulage,Kuala Lumpur,2016-03-10,799747,True
+TRK-0058,UW2983,Hino 700,Hino,2018,Euro 5,25000,Long Haul,Sarawak,2018-02-23,608623,True
+TRK-0059,JW9031,Volvo FM,Volvo,2016,Euro 5,40000,Long Haul,Kuala Lumpur,2016-09-21,429781,True
+TRK-0060,TZ5425,Mercedes Actros 1852,Mercedes-Benz,2017,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2017-07-06,506732,True
+TRK-0061,FY5569,Hino 700,Hino,2019,Euro 5,25000,Heavy Haulage,Perak,2019-06-28,537282,True
+TRK-0062,WE4475,Mercedes Actros 1845,Mercedes-Benz,2020,Euro 6,44000,Urban Delivery,Sabah,2020-01-16,406871,True
+TRK-0063,NE4954,Hino 700,Hino,2019,Euro 5,25000,Heavy Haulage,Negeri Sembilan,2019-09-01,632144,True
+TRK-0064,AH7625,Mercedes Actros 1852,Mercedes-Benz,2022,Euro 6,44000,Regional,Sabah,2022-08-26,746212,True
+TRK-0065,LT6419,Mercedes Actros 1852,Mercedes-Benz,2023,Euro 6,44000,Urban Delivery,Negeri Sembilan,2023-09-12,334076,True
+TRK-0066,HT4033,Scania P360,Scania,2016,Euro 5,32000,Regional,Perak,2016-12-07,557719,True
+TRK-0067,ZV5853,Hino 700,Hino,2023,Euro 5,25000,Regional,Sarawak,2023-10-10,238158,True
+TRK-0068,ZP3068,MAN TGX 26.480,MAN,2017,Euro 6,44000,Heavy Haulage,Johor,2017-05-02,62861,True
+TRK-0069,EB8827,Mercedes Actros 1852,Mercedes-Benz,2022,Euro 6,44000,Long Haul,Johor,2022-08-11,470172,True
+TRK-0070,VY2395,Hino 700,Hino,2015,Euro 5,25000,Regional,Johor,2015-03-05,635181,True
+TRK-0071,LL8025,Hino 700,Hino,2018,Euro 5,25000,Urban Delivery,Pahang,2018-09-13,701194,True
+TRK-0072,GB4929,Scania R500,Scania,2018,Euro 6,44000,Regional,Kedah,2018-11-07,128711,True
+TRK-0073,MA5720,Mercedes Actros 1845,Mercedes-Benz,2022,Euro 6,44000,Urban Delivery,Negeri Sembilan,2022-12-20,124637,True
+TRK-0074,PR5352,Volvo FH16,Volvo,2018,Euro 6,44000,Regional,Johor,2018-07-04,112535,True
+TRK-0075,MH7594,Volvo FH16,Volvo,2019,Euro 6,44000,Urban Delivery,Kedah,2019-08-04,616211,True
+TRK-0076,HG2496,Scania R500,Scania,2015,Euro 6,44000,Regional,Pahang,2015-07-24,665643,True
+TRK-0077,NL5557,Volvo FH16,Volvo,2015,Euro 6,44000,Regional,Pahang,2015-03-16,507058,True
+TRK-0078,KH2713,Mercedes Actros 1852,Mercedes-Benz,2016,Euro 6,44000,Regional,Sarawak,2016-08-12,481641,True
+TRK-0079,LH6296,Volvo FH16,Volvo,2021,Euro 6,44000,Long Haul,Kuala Lumpur,2021-09-02,589593,True
+TRK-0080,BN9167,Scania R450,Scania,2023,Euro 6,44000,Heavy Haulage,Selangor,2023-08-14,263446,True
+TRK-0081,MA4920,Scania G410,Scania,2019,Euro 5,40000,Regional,Sabah,2019-08-23,627596,False
+TRK-0082,XM2924,Mercedes Actros 1845,Mercedes-Benz,2016,Euro 6,44000,Regional,Negeri Sembilan,2016-04-27,356039,True
+TRK-0083,FP7284,Volvo FH16,Volvo,2021,Euro 6,44000,Regional,Pahang,2021-08-16,582929,True
+TRK-0084,UK9318,Scania G410,Scania,2016,Euro 5,40000,Urban Delivery,Selangor,2016-05-25,346578,True
+TRK-0085,NJ9903,Hino 700,Hino,2022,Euro 5,25000,Heavy Haulage,Negeri Sembilan,2022-03-15,387408,True
+TRK-0086,UB8749,Scania P360,Scania,2021,Euro 5,32000,Heavy Haulage,Kuala Lumpur,2021-04-28,745928,True
+TRK-0087,NQ2644,Scania G410,Scania,2022,Euro 5,40000,Heavy Haulage,Johor,2022-01-05,601499,True
+TRK-0088,RD8692,Scania R450,Scania,2017,Euro 6,44000,Urban Delivery,Sarawak,2017-07-28,703534,True
+TRK-0089,NY8994,Scania R500,Scania,2020,Euro 6,44000,Long Haul,Pahang,2020-11-28,121744,True
+TRK-0090,LC2646,Volvo FH16,Volvo,2018,Euro 6,44000,Heavy Haulage,Penang,2018-12-03,777712,True
+TRK-0091,BJ8056,Scania R450,Scania,2015,Euro 6,44000,Regional,Perak,2015-06-26,606968,True
+TRK-0092,QK4945,Scania G410,Scania,2017,Euro 5,40000,Heavy Haulage,Pahang,2017-03-03,200069,True
+TRK-0093,AV5712,Volvo FH16,Volvo,2022,Euro 6,44000,Regional,Johor,2022-05-22,513187,True
+TRK-0094,SL5949,Hino 700,Hino,2019,Euro 5,25000,Regional,Kuala Lumpur,2019-11-14,556680,True
+TRK-0095,ZH7484,Mercedes Actros 1845,Mercedes-Benz,2020,Euro 6,44000,Urban Delivery,Selangor,2020-10-10,643419,True
+TRK-0096,VQ6772,Scania R450,Scania,2022,Euro 6,44000,Regional,Perak,2022-05-25,701051,True
+TRK-0097,AU1546,Scania G410,Scania,2016,Euro 5,40000,Urban Delivery,Penang,2016-11-21,144511,True
+TRK-0098,DN6994,Volvo FM,Volvo,2021,Euro 5,40000,Urban Delivery,Penang,2021-03-07,319452,True
+TRK-0099,JC2233,Mercedes Actros 1852,Mercedes-Benz,2019,Euro 6,44000,Regional,Perak,2019-12-28,759176,True
+TRK-0100,UA9791,Mercedes Actros 1845,Mercedes-Benz,2023,Euro 6,44000,Long Haul,Negeri Sembilan,2023-06-03,436490,True
+TRK-0101,CF1410,Volvo FH16,Volvo,2021,Euro 6,44000,Urban Delivery,Pahang,2021-11-12,282120,True
+TRK-0102,CB1609,Mercedes Actros 1852,Mercedes-Benz,2019,Euro 6,44000,Urban Delivery,Negeri Sembilan,2019-11-14,171761,True
+TRK-0103,JY9850,MAN TGX 26.480,MAN,2017,Euro 6,44000,Heavy Haulage,Pahang,2017-07-15,212029,True
+TRK-0104,YG7070,Scania R500,Scania,2022,Euro 6,44000,Regional,Negeri Sembilan,2022-10-14,516297,True
+TRK-0105,PZ6876,Volvo FM,Volvo,2016,Euro 5,40000,Long Haul,Kuala Lumpur,2016-11-12,339282,True
+TRK-0106,FR1349,Scania R500,Scania,2022,Euro 6,44000,Long Haul,Sarawak,2022-02-22,305400,True
+TRK-0107,UE4538,Hino 700,Hino,2018,Euro 5,25000,Regional,Sarawak,2018-02-27,204721,True
+TRK-0108,ZZ9850,Hino 700,Hino,2015,Euro 5,25000,Urban Delivery,Penang,2015-05-28,165266,True
+TRK-0109,UF6304,Scania R450,Scania,2017,Euro 6,44000,Long Haul,Penang,2017-01-12,328258,True
+TRK-0110,BL6931,Mercedes Actros 1845,Mercedes-Benz,2023,Euro 6,44000,Long Haul,Negeri Sembilan,2023-02-24,578313,True
+TRK-0111,XR5941,Hino 700,Hino,2015,Euro 5,25000,Heavy Haulage,Selangor,2015-12-26,113780,True
+TRK-0112,MX2204,Mercedes Actros 1845,Mercedes-Benz,2021,Euro 6,44000,Long Haul,Sarawak,2021-11-04,687846,True
+TRK-0113,QT7240,Scania G410,Scania,2019,Euro 5,40000,Urban Delivery,Negeri Sembilan,2019-10-21,580108,True
+TRK-0114,XP4522,Scania R500,Scania,2016,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2016-11-21,289592,True
+TRK-0115,CL5176,Mercedes Actros 1852,Mercedes-Benz,2021,Euro 6,44000,Urban Delivery,Penang,2021-07-24,770184,True
+TRK-0116,LT7105,Scania R500,Scania,2016,Euro 6,44000,Regional,Kedah,2016-02-03,112894,True
+TRK-0117,CJ7929,MAN TGX 26.480,MAN,2023,Euro 6,44000,Long Haul,Sabah,2023-06-22,679575,True
+TRK-0118,RF2773,Scania R500,Scania,2023,Euro 6,44000,Urban Delivery,Kedah,2023-04-05,435415,True
+TRK-0119,PU1430,Volvo FH16,Volvo,2018,Euro 6,44000,Urban Delivery,Selangor,2018-07-28,239179,True
+TRK-0120,ED7566,Volvo FH16,Volvo,2020,Euro 6,44000,Long Haul,Penang,2020-06-01,713928,True
+TRK-0121,LJ7062,Scania R500,Scania,2023,Euro 6,44000,Urban Delivery,Sarawak,2023-04-13,645164,True
+TRK-0122,QS5458,Scania R450,Scania,2017,Euro 6,44000,Heavy Haulage,Kuala Lumpur,2017-03-25,559253,True
+TRK-0123,NJ2816,Mercedes Actros 1845,Mercedes-Benz,2019,Euro 6,44000,Urban Delivery,Pahang,2019-04-25,560271,True
+TRK-0124,ZB4349,Volvo FH16,Volvo,2015,Euro 6,44000,Urban Delivery,Perak,2015-04-13,193901,True
+TRK-0125,ML3116,Volvo FH16,Volvo,2020,Euro 6,44000,Heavy Haulage,Kedah,2020-02-01,787852,True
+TRK-0126,WB1307,MAN TGX 26.480,MAN,2020,Euro 6,44000,Heavy Haulage,Johor,2020-02-13,378267,True
+TRK-0127,LC1341,Hino 700,Hino,2021,Euro 5,25000,Urban Delivery,Penang,2021-12-21,698151,True
+TRK-0128,CL7560,Volvo FM,Volvo,2016,Euro 5,40000,Long Haul,Kuala Lumpur,2016-07-28,375346,True
+TRK-0129,NC9355,Scania P360,Scania,2020,Euro 5,32000,Regional,Sarawak,2020-03-03,418154,True
+TRK-0130,GE3504,Scania G410,Scania,2018,Euro 5,40000,Long Haul,Penang,2018-02-05,708452,True
+TRK-0131,RZ6295,Hino 700,Hino,2022,Euro 5,25000,Urban Delivery,Penang,2022-11-19,511124,True
+TRK-0132,BN6085,Mercedes Actros 1852,Mercedes-Benz,2019,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2019-05-19,89434,True
+TRK-0133,ZC9307,Volvo FH16,Volvo,2016,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2016-11-28,658519,True
+TRK-0134,EQ9214,Scania R450,Scania,2022,Euro 6,44000,Regional,Selangor,2022-10-21,522407,True
+TRK-0135,EF8172,Volvo FM,Volvo,2016,Euro 5,40000,Heavy Haulage,Kedah,2016-09-21,598141,True
+TRK-0136,KJ1857,Volvo FM,Volvo,2020,Euro 5,40000,Urban Delivery,Johor,2020-05-13,395705,True
+TRK-0137,WZ3463,Mercedes Actros 1845,Mercedes-Benz,2019,Euro 6,44000,Urban Delivery,Johor,2019-05-24,661046,True
+TRK-0138,RD2388,Volvo FM,Volvo,2019,Euro 5,40000,Urban Delivery,Kedah,2019-11-23,444976,True
+TRK-0139,VT9624,Volvo FM,Volvo,2017,Euro 5,40000,Long Haul,Kuala Lumpur,2017-11-23,583188,True
+TRK-0140,JU4145,Volvo FM,Volvo,2019,Euro 5,40000,Regional,Penang,2019-03-07,212471,True
+TRK-0141,TN6517,Scania R500,Scania,2023,Euro 6,44000,Regional,Pahang,2023-09-27,445019,True
+TRK-0142,BJ4891,Scania G410,Scania,2017,Euro 5,40000,Heavy Haulage,Pahang,2017-12-15,348768,True
+TRK-0143,HV8684,Mercedes Actros 1852,Mercedes-Benz,2018,Euro 6,44000,Regional,Sarawak,2018-09-08,761256,True
+TRK-0144,KN3655,Mercedes Actros 1852,Mercedes-Benz,2022,Euro 6,44000,Regional,Pahang,2022-05-25,195121,True
+TRK-0145,YT9452,Scania R450,Scania,2022,Euro 6,44000,Long Haul,Sabah,2022-06-18,137949,True
+TRK-0146,VC4637,Volvo FH16,Volvo,2022,Euro 6,44000,Heavy Haulage,Sarawak,2022-09-05,77965,True
+TRK-0147,KB4678,Mercedes Actros 1845,Mercedes-Benz,2023,Euro 6,44000,Long Haul,Sarawak,2023-06-08,153896,True
+TRK-0148,GV3273,Volvo FM,Volvo,2017,Euro 5,40000,Heavy Haulage,Negeri Sembilan,2017-03-02,695239,False
+TRK-0149,WP9647,Scania R500,Scania,2015,Euro 6,44000,Heavy Haulage,Johor,2015-05-07,352096,True
+TRK-0150,RQ2029,Scania R500,Scania,2015,Euro 6,44000,Long Haul,Negeri Sembilan,2015-04-14,675726,True
+TRK-0151,GA6780,MAN TGX 26.480,MAN,2018,Euro 6,44000,Regional,Pahang,2018-12-05,486802,True
+TRK-0152,YP9316,Scania R500,Scania,2023,Euro 6,44000,Long Haul,Kuala Lumpur,2023-06-03,542972,False
+TRK-0153,AU6649,Mercedes Actros 1845,Mercedes-Benz,2020,Euro 6,44000,Regional,Johor,2020-05-24,660169,True
+TRK-0154,PV3868,Volvo FM,Volvo,2017,Euro 5,40000,Heavy Haulage,Negeri Sembilan,2017-01-12,712423,True
+TRK-0155,YA4302,Scania G410,Scania,2016,Euro 5,40000,Long Haul,Perak,2016-12-25,93941,True
+TRK-0156,PG4131,Volvo FH16,Volvo,2023,Euro 6,44000,Urban Delivery,Sarawak,2023-07-27,100126,True
+TRK-0157,JX8204,Volvo FM,Volvo,2019,Euro 5,40000,Heavy Haulage,Sarawak,2019-02-26,245892,True
+TRK-0158,VT2293,Mercedes Actros 1852,Mercedes-Benz,2020,Euro 6,44000,Heavy Haulage,Pahang,2020-09-09,239222,True
+TRK-0159,RH7981,Volvo FM,Volvo,2016,Euro 5,40000,Regional,Negeri Sembilan,2016-02-11,418623,True
+TRK-0160,ZY2229,Volvo FM,Volvo,2021,Euro 5,40000,Heavy Haulage,Sarawak,2021-05-21,588009,True
+TRK-0161,QU1570,Scania G410,Scania,2015,Euro 5,40000,Regional,Johor,2015-03-28,297459,True
+TRK-0162,AD8371,Volvo FM,Volvo,2020,Euro 5,40000,Urban Delivery,Sarawak,2020-07-19,515504,True
+TRK-0163,KR5089,Hino 700,Hino,2017,Euro 5,25000,Long Haul,Selangor,2017-09-12,245085,True
+TRK-0164,US4515,Mercedes Actros 1845,Mercedes-Benz,2023,Euro 6,44000,Urban Delivery,Negeri Sembilan,2023-02-09,259902,True
+TRK-0165,LC6236,Scania R500,Scania,2022,Euro 6,44000,Urban Delivery,Johor,2022-03-23,626713,True
+TRK-0166,YR6922,Volvo FH16,Volvo,2017,Euro 6,44000,Regional,Johor,2017-12-23,260743,True
+TRK-0167,PJ3126,Scania P360,Scania,2022,Euro 5,32000,Long Haul,Johor,2022-01-12,374314,True
+TRK-0168,KP3053,Mercedes Actros 1852,Mercedes-Benz,2023,Euro 6,44000,Urban Delivery,Johor,2023-07-25,521832,True
+TRK-0169,UR3981,MAN TGX 26.480,MAN,2020,Euro 6,44000,Regional,Kuala Lumpur,2020-03-27,577290,True
+TRK-0170,HD4694,Scania R450,Scania,2016,Euro 6,44000,Urban Delivery,Kedah,2016-09-05,347846,True
+TRK-0171,GR9740,Volvo FH16,Volvo,2018,Euro 6,44000,Long Haul,Kedah,2018-11-18,722124,True
+TRK-0172,QX6531,Hino 700,Hino,2017,Euro 5,25000,Long Haul,Selangor,2017-03-22,135168,False
+TRK-0173,UK1496,Hino 700,Hino,2019,Euro 5,25000,Heavy Haulage,Kedah,2019-11-07,353742,True
+TRK-0174,VK8430,Volvo FH16,Volvo,2022,Euro 6,44000,Long Haul,Selangor,2022-04-26,215759,True
+TRK-0175,QH6231,Mercedes Actros 1852,Mercedes-Benz,2022,Euro 6,44000,Urban Delivery,Kuala Lumpur,2022-04-11,187118,True
+TRK-0176,FC8366,MAN TGX 26.480,MAN,2023,Euro 6,44000,Regional,Penang,2023-02-11,151514,True
+TRK-0177,XV6123,Mercedes Actros 1845,Mercedes-Benz,2021,Euro 6,44000,Regional,Penang,2021-04-28,572469,True
+TRK-0178,AY9281,Mercedes Actros 1852,Mercedes-Benz,2022,Euro 6,44000,Heavy Haulage,Perak,2022-05-16,275595,True
+TRK-0179,QW8710,Scania R450,Scania,2015,Euro 6,44000,Urban Delivery,Kedah,2015-05-16,58574,True
+TRK-0180,JK1741,Mercedes Actros 1845,Mercedes-Benz,2017,Euro 6,44000,Heavy Haulage,Selangor,2017-05-24,647983,True
+TRK-0181,KL5582,Volvo FM,Volvo,2023,Euro 5,40000,Long Haul,Penang,2023-05-03,151377,True
+TRK-0182,DQ7576,Volvo FM,Volvo,2023,Euro 5,40000,Long Haul,Selangor,2023-06-25,90804,True
+TRK-0183,DX3290,Volvo FM,Volvo,2022,Euro 5,40000,Urban Delivery,Pahang,2022-09-15,384002,True
+TRK-0184,NN9025,Hino 700,Hino,2019,Euro 5,25000,Urban Delivery,Negeri Sembilan,2019-10-11,67445,True
+TRK-0185,VT1436,Scania R500,Scania,2021,Euro 6,44000,Heavy Haulage,Sabah,2021-10-10,737436,True
+TRK-0186,QE7229,Hino 700,Hino,2018,Euro 5,25000,Regional,Perak,2018-12-02,83104,True
+TRK-0187,HD4340,Scania R500,Scania,2018,Euro 6,44000,Heavy Haulage,Kedah,2018-01-15,691181,True
+TRK-0188,PZ8837,Scania R450,Scania,2017,Euro 6,44000,Heavy Haulage,Sarawak,2017-09-07,231594,True
+TRK-0189,SW5331,MAN TGX 26.480,MAN,2020,Euro 6,44000,Heavy Haulage,Perak,2020-09-12,308494,True
+TRK-0190,GE9011,Volvo FH16,Volvo,2018,Euro 6,44000,Urban Delivery,Negeri Sembilan,2018-05-25,415746,True
+TRK-0191,SK7464,Volvo FH16,Volvo,2019,Euro 6,44000,Urban Delivery,Penang,2019-02-19,354561,False
+TRK-0192,GM4310,Scania R500,Scania,2020,Euro 6,44000,Urban Delivery,Kedah,2020-08-21,779988,True
+TRK-0193,SN4814,Scania R500,Scania,2018,Euro 6,44000,Long Haul,Johor,2018-04-02,483377,True
+TRK-0194,DZ3587,Mercedes Actros 1852,Mercedes-Benz,2016,Euro 6,44000,Heavy Haulage,Negeri Sembilan,2016-11-25,550641,True
+TRK-0195,BU4804,Volvo FH16,Volvo,2020,Euro 6,44000,Long Haul,Penang,2020-05-21,488184,True
+TRK-0196,MY5742,Scania G410,Scania,2015,Euro 5,40000,Long Haul,Selangor,2015-07-26,362886,True
+TRK-0197,ZP9092,Scania R500,Scania,2020,Euro 6,44000,Regional,Kedah,2020-05-15,540755,True
+TRK-0198,MG4050,Scania R500,Scania,2020,Euro 6,44000,Long Haul,Sarawak,2020-03-24,359355,True
+TRK-0199,RK8007,Scania P360,Scania,2017,Euro 5,32000,Urban Delivery,Johor,2017-10-28,470304,True
+TRK-0200,YA7284,Scania G410,Scania,2017,Euro 5,40000,Regional,Negeri Sembilan,2017-08-11,329963,True

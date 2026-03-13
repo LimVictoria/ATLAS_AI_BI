@@ -1,0 +1,26 @@
+component_id,component_name,component_category,subsystem,expected_lifespan_km,unit_cost_myr,criticality_level
+COMP-001,Engine Oil Filter,Engine,Lubrication,15000,45,High
+COMP-002,Air Filter,Engine,Air Intake,20000,85,High
+COMP-003,Fuel Filter,Fuel System,Filtration,20000,65,High
+COMP-004,Brake Pads (Front),Braking System,Friction,40000,320,Critical
+COMP-005,Brake Pads (Rear),Braking System,Friction,50000,280,Critical
+COMP-006,Brake Drums,Braking System,Friction,150000,850,Critical
+COMP-007,Clutch Assembly,Transmission,Coupling,200000,1800,High
+COMP-008,Gearbox Oil,Transmission,Lubrication,60000,120,Medium
+COMP-009,Drive Shaft,Drivetrain,Power Transfer,300000,2400,Critical
+COMP-010,Wheel Bearings,Suspension,Rolling,200000,450,High
+COMP-011,Shock Absorbers,Suspension,Damping,100000,680,Medium
+COMP-012,Leaf Springs,Suspension,Support,250000,1200,Medium
+COMP-013,Alternator,Electrical,Generation,200000,1400,High
+COMP-014,Starter Motor,Electrical,Starting,150000,950,High
+COMP-015,Battery,Electrical,Storage,24000,480,Medium
+COMP-016,Radiator,Cooling System,Heat Exchange,300000,1800,High
+COMP-017,Coolant Hoses,Cooling System,Fluid Transfer,60000,95,Medium
+COMP-018,Water Pump,Cooling System,Circulation,150000,620,High
+COMP-019,Turbocharger,Engine,Forced Induction,250000,3200,Critical
+COMP-020,Injectors,Fuel System,Injection,200000,2800,Critical
+COMP-021,EGR Valve,Emissions,Exhaust,150000,980,Medium
+COMP-022,DPF Filter,Emissions,Filtration,200000,2200,High
+COMP-023,Tyres (Front),Tyres,Contact,80000,650,Critical
+COMP-024,Tyres (Rear),Tyres,Contact,60000,580,Critical
+COMP-025,Fifth Wheel Coupling,Coupling,Connection,300000,1100,Critical

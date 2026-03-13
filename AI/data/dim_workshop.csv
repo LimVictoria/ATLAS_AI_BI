@@ -1,0 +1,13 @@
+workshop_id,workshop_name,city,state,region,capacity_bays,is_authorised_scania,workshop_type
+WS-001,Scania Shah Alam Service Centre,Shah Alam,Selangor,West,12,True,Authorised Dealer
+WS-002,Scania Johor Bahru,Johor Bahru,Johor,South,10,True,Authorised Dealer
+WS-003,Scania Penang,Butterworth,Penang,North,8,True,Authorised Dealer
+WS-004,Scania Kota Kinabalu,Kota Kinabalu,Sabah,East,6,True,Authorised Dealer
+WS-005,Scania Kuching,Kuching,Sarawak,East,6,True,Authorised Dealer
+WS-006,Trans Logistics Workshop KL,Kuala Lumpur,Kuala Lumpur,West,18,False,Fleet Workshop
+WS-007,Highway Fleet Services Seremban,Seremban,Negeri Sembilan,West,8,False,Fleet Workshop
+WS-008,Northern Truck Services Ipoh,Ipoh,Perak,North,6,False,Independent
+WS-009,East Coast Truck Repairs Kuantan,Kuantan,Pahang,East,4,False,Independent
+WS-010,Roadside Emergency Unit Central,Kuala Lumpur,Kuala Lumpur,West,2,False,Mobile Unit
+WS-011,Volvo Trucks Shah Alam,Shah Alam,Selangor,West,10,True,Authorised Dealer
+WS-012,Mercedes-Benz Trucks PJ,Petaling Jaya,Selangor,West,8,True,Authorised Dealer
