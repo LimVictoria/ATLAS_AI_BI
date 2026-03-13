@@ -9,7 +9,10 @@ export async function processUIActions(actions: any[]) {
     // ── Add new chart to canvas ───────────────────────────────────────────
     if (action.action === "add_chart") {
       const raw = action.chart_data
-      if (!raw) continue
+      if (!raw) {
+        console.error("[useUIActions] add_chart action missing chart_data:", action)
+        continue
+      }
       addChart({
         id: uuid(),
         metric_id: action.metric_id,
