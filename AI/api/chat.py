@@ -241,22 +241,41 @@ STACKED_BAR_METRICS = {"cost_by_brand_and_component", "downtime_by_brand_and_com
 def execute_chart_action(action: dict) -> dict | None:
     if action.get("action") != "add_chart":
         return None
+
+    metric_id  = action.get("metric_id", "")
+    chart_type = action.get("chart_type")
+
+    print(f"[execute_chart_action] metric_id={metric_id!r} chart_type={chart_type!r}")
+
+    # Validate metric exists
+    if metric_id not in METRICS:
+        # Try fuzzy match: find closest metric key
+        candidates = [k for k in METRICS if any(w in k for w in metric_id.replace("-","_").split("_") if len(w) > 3)]
+        if candidates:
+            metric_id = candidates[0]
+            print(f"[execute_chart_action] fuzzy matched to {metric_id!r}")
+        else:
+            print(f"[execute_chart_action] UNKNOWN metric {metric_id!r}, available: {list(METRICS.keys())[:10]}")
+            return None
+
+    # Safety remap: stacked_bar on wrong metric → swap metric
+    if chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
+        metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
+        print(f"[execute_chart_action] stacked_bar remapped to {metric_id!r}")
+
     try:
-        metric_id = action["metric_id"]
-        chart_type = action.get("chart_type")
-        # Safety remap: stacked_bar on wrong metric → swap metric
-        if chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
-            metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
         req = QueryRequest(
             metric_id=metric_id,
             chart_type=chart_type,
             filters=action.get("filters", {}),
         )
         data = run_metric(req)
-        # Propagate remapped metric_id back so frontend gets the right one
+        print(f"[execute_chart_action] SUCCESS metric_id={metric_id!r} rows={data.get('row_count',0)}")
         return {**action, "metric_id": metric_id, "chart_data": data}
     except Exception as e:
-        print(f"[execute_chart_action] Error: {e}")
+        import traceback
+        print(f"[execute_chart_action] FAILED metric_id={metric_id!r}: {e}")
+        print(traceback.format_exc())
         return None
 
 
