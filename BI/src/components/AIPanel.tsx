@@ -10,11 +10,13 @@ const SUGGESTIONS = [
   "Show total cost by brand",
   "Which components fail most?",
   "Show failure trend by quarter",
-  "Cost vs downtime by workshop",
+  "Show cost vs downtime scatter",
+  "Show cost heatmap by brand & month",
+  "Waterfall chart of cost by category",
+  "Cost distribution boxplot by brand",
   "Show last 12 months trend",
   "Scheduled vs unscheduled ratio",
-  "Add a brand filter",
-  "Show YoY cost comparison",
+  "How many charts do I have?",
 ]
 
 export default function AIPanel() {
@@ -34,6 +36,20 @@ export default function AIPanel() {
     [messages]
   )
 
+  const buildBoardContext = useCallback(() => {
+    return {
+      charts_on_canvas: charts.map(c => ({
+        id: c.id,
+        title: c.title,
+        metric_id: c.metric_id,
+        chart_type: c.chart_type,
+        filters: c.filters || {},
+        selected: c.selected || false,
+      })),
+      selected_ids: charts.filter(c => c.selected).map(c => c.id),
+    }
+  }, [charts])
+
   const send = useCallback(async (text: string) => {
     if (!text.trim() || loading || !sessionId) return
     setInput("")
@@ -44,7 +60,7 @@ export default function AIPanel() {
     addMessage({ id: loadingId, role: "assistant", text: "", timestamp: new Date(), loading: true })
 
     try {
-      const resp = await sendChat(sessionId, text, buildHistory())
+      const resp = await sendChat(sessionId, text, buildHistory(), buildBoardContext())
       updateMessage(loadingId, { loading: false, text: resp.narrative || "Done." })
       if (resp.ui_actions?.length) await processUIActions(resp.ui_actions)
     } catch {
@@ -52,7 +68,7 @@ export default function AIPanel() {
     } finally {
       setLoading(false)
     }
-  }, [loading, sessionId, addMessage, updateMessage, buildHistory])
+  }, [loading, sessionId, addMessage, updateMessage, buildHistory, buildBoardContext])
 
   const handleClear = async () => {
     clearMessages()
@@ -60,7 +76,10 @@ export default function AIPanel() {
   }
 
   return (
-    <div style={{ width: "380px", flexShrink: 0, display: "flex", flexDirection: "column", height: "100vh", background: "#FFFFFF", borderRight: "1px solid #E8ECF0", overflow: "hidden" }}>
+    <div style={{
+      width: "380px", flexShrink: 0, display: "flex", flexDirection: "column",
+      height: "100vh", background: "#FFFFFF", borderRight: "1px solid #E8ECF0", overflow: "hidden"
+    }}>
       {/* Header */}
       <div style={{
         height: 52, display: "flex", alignItems: "center",
@@ -78,6 +97,11 @@ export default function AIPanel() {
               padding: "2px 8px", borderRadius: 99, fontWeight: 500,
             }}>
               {charts.length} chart{charts.length !== 1 ? "s" : ""}
+              {charts.filter(c => c.selected).length > 0 && (
+                <span style={{ color: "#0284c7", marginLeft: 4 }}>
+                  · {charts.filter(c => c.selected).length} selected
+                </span>
+              )}
             </span>
           )}
           <button onClick={handleClear} title="Clear chat"
@@ -89,30 +113,27 @@ export default function AIPanel() {
 
       {/* Suggestions */}
       {messages.length === 0 && (
-        <>
-          <div style={{ padding: "20px 16px 8px", flexShrink: 0 }}>
-            <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 10, lineHeight: 1.6 }}>
-              Ask about fleet maintenance costs, failures, downtime, or workshops.
-              Charts appear on the right.
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {SUGGESTIONS.map(s => (
-                <button key={s} onClick={() => send(s)}
-                  style={{
-                    padding: "5px 10px", border: "1px solid #e2e8f0",
-                    borderRadius: 99, fontSize: 11, color: "#64748b",
-                    background: "#ffffff", cursor: "pointer",
-                    transition: "all 0.12s", whiteSpace: "nowrap",
-                  }}
-                  onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = "#0284c7"; (e.target as HTMLElement).style.color = "#0284c7" }}
-                  onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = "#e2e8f0"; (e.target as HTMLElement).style.color = "#64748b" }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+        <div style={{ padding: "20px 16px 8px", flexShrink: 0 }}>
+          <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 10, lineHeight: 1.6 }}>
+            Ask about costs, failures, downtime, or workshops. Select a chart on the canvas to modify it directly.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {SUGGESTIONS.map(s => (
+              <button key={s} onClick={() => send(s)}
+                style={{
+                  padding: "5px 10px", border: "1px solid #e2e8f0",
+                  borderRadius: 99, fontSize: 11, color: "#64748b",
+                  background: "#ffffff", cursor: "pointer",
+                  transition: "all 0.12s", whiteSpace: "nowrap",
+                }}
+                onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = "#0284c7"; (e.target as HTMLElement).style.color = "#0284c7" }}
+                onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = "#e2e8f0"; (e.target as HTMLElement).style.color = "#64748b" }}
+              >
+                {s}
+              </button>
+            ))}
           </div>
-        </>
+        </div>
       )}
 
       {/* Messages */}
@@ -125,8 +146,7 @@ export default function AIPanel() {
             {msg.loading ? (
               <div style={{
                 padding: "10px 14px", background: "#f8fafc",
-                borderRadius: "12px 12px 12px 3px",
-                border: "1px solid #f1f5f9",
+                borderRadius: "12px 12px 12px 3px", border: "1px solid #f1f5f9",
               }}>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   {[0, 1, 2].map(i => (
@@ -145,7 +165,7 @@ export default function AIPanel() {
                 color: msg.role === "user" ? "#ffffff" : "#1e293b",
                 borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
                 border: msg.role === "user" ? "none" : "1px solid #f1f5f9",
-                fontSize: 13, lineHeight: 1.6,
+                fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap",
               }}>
                 {msg.text}
               </div>
@@ -157,6 +177,20 @@ export default function AIPanel() {
 
       {/* Input */}
       <div style={{ padding: "10px 16px 14px", borderTop: "1px solid #f1f5f9", background: "#ffffff", flexShrink: 0 }}>
+        {charts.filter(c => c.selected).length > 0 && (
+          <div style={{
+            fontSize: 10, color: "#0284c7", background: "#EFF6FF",
+            border: "1px solid #BFDBFE", borderRadius: 6,
+            padding: "4px 10px", marginBottom: 8,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0284c7", flexShrink: 0, display: "inline-block" }} />
+            {charts.filter(c => c.selected).length === 1
+              ? `"${charts.find(c => c.selected)?.title}" is selected — ask to modify it`
+              : `${charts.filter(c => c.selected).length} charts selected`
+            }
+          </div>
+        )}
         <div style={{ position: "relative" }}>
           <textarea
             ref={textareaRef}
@@ -172,8 +206,7 @@ export default function AIPanel() {
               fontSize: 13, outline: "none", resize: "none",
               fontFamily: "Inter, system-ui, sans-serif",
               color: "#1e293b", background: loading ? "#f8fafc" : "#ffffff",
-              boxSizing: "border-box",
-              transition: "border-color 0.15s",
+              boxSizing: "border-box", transition: "border-color 0.15s",
             }}
             onFocus={e => e.target.style.borderColor = "#0284c7"}
             onBlur={e => e.target.style.borderColor = "#e2e8f0"}
