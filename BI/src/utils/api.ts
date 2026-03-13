@@ -8,8 +8,19 @@ const API = axios.create({
 export const runMetric = (metric_id: string, chart_type?: string, filters?: Record<string, any>) =>
   API.post("/query/", { metric_id, chart_type, filters }).then(r => r.data)
 
-export const sendChat = (session_id: string, message: string, history: any[]) =>
-  API.post("/chat/", { session_id, message, history }).then(r => r.data)
+export const sendChat = (
+  session_id: string,
+  message: string,
+  history: any[],
+  board_context?: {
+    charts_on_canvas: Array<{
+      id: string; title: string; metric_id: string
+      chart_type: string; filters: Record<string, any>; selected: boolean
+    }>
+    selected_ids: string[]
+  }
+) =>
+  API.post("/chat/", { session_id, message, history, board_context }).then(r => r.data)
 
 export const getFilters = () =>
   API.get("/filters/").then(r => r.data)
