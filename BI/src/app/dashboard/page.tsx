@@ -13,7 +13,17 @@ export default function DashboardPage() {
   }, [sessionId, setSessionId])
 
   return (
-    <div className="atlas-layout">
+    <div style={{
+      display: "flex",
+      flexDirection: "row",
+      height: "100vh",
+      width: "100vw",
+      overflow: "hidden",
+      background: "#F4F6F9",
+      position: "fixed",
+      top: 0,
+      left: 0,
+    }}>
       <AIPanel />
       <BIPanel />
     </div>
