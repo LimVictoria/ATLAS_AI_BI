@@ -58,8 +58,12 @@ export default function AIPanel() {
       const resp = await sendChat(sessionId, text, buildHistory(), buildBoardContext())
       updateMessage(loadingId, { loading: false, text: resp.narrative || "Done." })
       if (resp.ui_actions?.length) await processUIActions(resp.ui_actions)
-    } catch {
-      updateMessage(loadingId, { loading: false, text: "Something went wrong. Please try again." })
+    } catch (err: any) {
+      const is429 = err?.status === 429 || (err?.message || "").includes("429") || (err?.message || "").includes("rate limit")
+      const msg = is429
+        ? "⏳ Groq is rate-limited right now — wait a few seconds and try again."
+        : "Something went wrong. Please try again."
+      updateMessage(loadingId, { loading: false, text: msg })
     } finally {
       setLoading(false)
     }
