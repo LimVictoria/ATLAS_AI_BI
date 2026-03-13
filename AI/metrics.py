@@ -36,7 +36,34 @@ METRICS = {
         "y_col":           "total_cost",
     },
 
-    "cost_by_brand_and_month": {
+    "cost_per_vehicle_by_month": {
+        "metric_id":       "cost_per_vehicle_by_month",
+        "title":           "Cost per Vehicle by Month",
+        "description":     "Each vehicle's maintenance cost broken down by month and year",
+        "category":        "Cost",
+        "sql":             """
+            SELECT plate_number                                     AS vehicle,
+                   brand,
+                   CAST(strftime(service_date, '%Y') AS INTEGER)   AS year,
+                   CAST(strftime(service_date, '%m') AS INTEGER)   AS month,
+                   strftime(service_date, '%Y-%m')                  AS year_month,
+                   COUNT(*)                                         AS event_count,
+                   ROUND(SUM(total_cost_myr), 2)                   AS total_cost,
+                   ROUND(AVG(total_cost_myr), 2)                   AS avg_cost
+            FROM v_maintenance_full
+            {where}
+            GROUP BY plate_number, brand, year, month, year_month
+            ORDER BY year, month, total_cost DESC
+        """,
+        "dimensions":      ["vehicle", "brand", "year", "month", "year_month"],
+        "measures":        ["event_count", "total_cost", "avg_cost"],
+        "default_chart":   "table",
+        "available_charts":["table"],
+        "x_col":           "vehicle",
+        "y_col":           "total_cost",
+    },
+
+        "cost_by_brand_and_month": {
         "metric_id":       "cost_by_brand_and_month",
         "title":           "Cost by Brand and Month",
         "description":     "Monthly maintenance cost per truck brand with fleet size",
