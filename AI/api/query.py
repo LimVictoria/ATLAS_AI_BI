@@ -3,7 +3,6 @@ ATLAS BI — /query endpoint
 """
 import json
 import plotly.graph_objects as go
-import plotly.utils
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -62,7 +61,7 @@ def _palette(category: str, n: int) -> list:
 
 
 def _to_json(fig) -> str:
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    return fig.to_json()
 
 
 def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
