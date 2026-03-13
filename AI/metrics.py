@@ -17,16 +17,19 @@ METRICS = {
         "category":        "Cost",
         "sql":             """
             SELECT brand,
-                   ROUND(SUM(total_cost_myr), 2)  AS total_cost,
-                   COUNT(*)                         AS event_count,
-                   ROUND(AVG(total_cost_myr), 2)   AS avg_cost_per_event
+                   ROUND(SUM(total_cost_myr), 2)                                     AS total_cost,
+                   COUNT(*)                                                            AS event_count,
+                   ROUND(AVG(total_cost_myr), 2)                                      AS avg_cost_per_event,
+                   COUNT(DISTINCT plate_number)                                        AS fleet_size,
+                   ROUND(SUM(total_cost_myr) / NULLIF(COUNT(DISTINCT plate_number),0), 2) AS cost_per_vehicle,
+                   ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT plate_number),0), 2)  AS events_per_vehicle
             FROM v_maintenance_full
             {where}
             GROUP BY brand
             ORDER BY total_cost DESC
         """,
         "dimensions":      ["brand"],
-        "measures":        ["total_cost", "event_count", "avg_cost_per_event"],
+        "measures":        ["total_cost", "event_count", "avg_cost_per_event", "fleet_size", "cost_per_vehicle", "events_per_vehicle"],
         "default_chart":   "bar",
         "available_charts":["bar", "pie", "table", "pareto", "waterfall", "treemap", "stacked_bar"],
         "x_col":           "brand",
