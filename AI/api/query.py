@@ -407,3 +407,47 @@ def run_metric(req: QueryRequest):
 def list_metrics():
     from metrics import get_metrics_index
     return {"metrics": get_metrics_index()}
+
+
+# ── Stacked Bar (appended) ────────────────────────────────────────────────────
+_ORIG_BUILD_CHART = _build_chart
+
+def _build_chart(df, metric, chart_type):
+    if chart_type == "stacked_bar":
+        import pandas as pd
+        df = _clean_df(df)
+        x_col     = metric.get("x_col", "brand")
+        y_col     = metric.get("y_col")
+        group_col = metric.get("group_col", "component_category")
+        cat       = metric.get("category", "General")
+
+        groups = df[group_col].unique().tolist()
+        palette = [
+            "#1D4ED8","#7C3AED","#DC2626","#059669","#D97706",
+            "#0891B2","#DB2777","#EA580C","#65A30D","#0284C7",
+            "#9333EA","#16A34A","#CA8A04","#0369A1","#B91C1C",
+        ]
+
+        fig = go.Figure()
+        for i, grp in enumerate(groups):
+            subset = df[df[group_col] == grp]
+            fig.add_trace(go.Bar(
+                name=str(grp),
+                x=subset[x_col],
+                y=subset[y_col],
+                marker=dict(color=palette[i % len(palette)], line=dict(width=0)),
+                hovertemplate=f"<b>%{{x}}</b><br>{grp}: <b>%{{y:,.0f}}</b><extra></extra>",
+            ))
+
+        stacked_layout = {**BASE}
+        stacked_layout["barmode"] = "stack"
+        stacked_layout["legend"] = dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=9, color="#64748B"),
+            bgcolor="rgba(0,0,0,0)",
+        )
+        fig.update_layout(**stacked_layout)
+        return _to_json(fig)
+
+    return _ORIG_BUILD_CHART(df, metric, chart_type)
