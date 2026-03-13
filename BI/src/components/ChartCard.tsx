@@ -106,6 +106,19 @@ const CHART_ICONS: Record<string, React.ReactNode> = {
       <rect x="9.5" y="9" width="2.5" height="3" rx="0.8" fill="#D1FAE5"/>
     </svg>
   ),
+  stacked_bar: (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <rect x="1" y="8" width="2.5" height="4" rx="0.7" fill="#1D4ED8"/>
+      <rect x="1" y="5" width="2.5" height="3" rx="0" fill="#7C3AED"/>
+      <rect x="1" y="3" width="2.5" height="2" rx="0.7 0.7 0 0" fill="#059669"/>
+      <rect x="5" y="6" width="2.5" height="6" rx="0.7" fill="#1D4ED8"/>
+      <rect x="5" y="3.5" width="2.5" height="2.5" rx="0" fill="#7C3AED"/>
+      <rect x="5" y="2" width="2.5" height="1.5" rx="0.7 0.7 0 0" fill="#059669"/>
+      <rect x="9" y="7" width="2.5" height="5" rx="0.7" fill="#1D4ED8"/>
+      <rect x="9" y="4.5" width="2.5" height="2.5" rx="0" fill="#7C3AED"/>
+      <rect x="9" y="2.5" width="2.5" height="2" rx="0.7 0.7 0 0" fill="#D97706"/>
+    </svg>
+  ),
   histogram: (
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
       <rect x="1" y="9" width="1.8" height="3" rx="0.5" fill="#F59E0B" opacity="0.6"/>
