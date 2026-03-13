@@ -895,3 +895,51 @@ def get_metrics_index() -> list[dict]:
          "available_charts": m.get("available_charts", [])}
         for m in METRICS.values()
     ]
+
+
+# Appended: stacked bar metric
+METRICS["cost_by_brand_and_component"] = {
+    "metric_id":       "cost_by_brand_and_component",
+    "title":           "Cost by Brand broken down by Component",
+    "description":     "Stacked bar showing each brand's total cost split by component category",
+    "category":        "Cost",
+    "sql":             """
+        SELECT brand,
+               component_category,
+               ROUND(SUM(total_cost_myr), 2) AS total_cost
+        FROM v_maintenance_full
+        {where}
+        GROUP BY brand, component_category
+        ORDER BY brand, total_cost DESC
+    """,
+    "dimensions":      ["brand", "component_category"],
+    "measures":        ["total_cost"],
+    "default_chart":   "stacked_bar",
+    "available_charts":["stacked_bar", "bar", "table", "treemap"],
+    "x_col":           "brand",
+    "y_col":           "total_cost",
+    "group_col":       "component_category",
+}
+
+METRICS["downtime_by_brand_and_component"] = {
+    "metric_id":       "downtime_by_brand_and_component",
+    "title":           "Downtime by Brand broken down by Component",
+    "description":     "Stacked bar showing each brand's total downtime split by component category",
+    "category":        "Downtime",
+    "sql":             """
+        SELECT brand,
+               component_category,
+               ROUND(SUM(downtime_hours), 2) AS total_downtime
+        FROM v_maintenance_full
+        {where}
+        GROUP BY brand, component_category
+        ORDER BY brand, total_downtime DESC
+    """,
+    "dimensions":      ["brand", "component_category"],
+    "measures":        ["total_downtime"],
+    "default_chart":   "stacked_bar",
+    "available_charts":["stacked_bar", "bar", "table"],
+    "x_col":           "brand",
+    "y_col":           "total_downtime",
+    "group_col":       "component_category",
+}
