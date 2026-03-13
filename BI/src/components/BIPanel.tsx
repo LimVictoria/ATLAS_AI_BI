@@ -34,9 +34,9 @@ export default function BIPanel() {
   }
 
   return (
-    <div className="bi-panel">
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "#F4F6F9" }}>
       {/* Topbar */}
-      <div className="topbar">
+      <div style={{ height: "52px", display: "flex", alignItems: "center", padding: "0 18px", background: "#FFFFFF", borderBottom: "1px solid #E8ECF0", flexShrink: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", letterSpacing: "-0.01em" }}>
           BI Canvas
         </span>
