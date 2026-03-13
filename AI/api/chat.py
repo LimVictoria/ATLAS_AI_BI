@@ -79,13 +79,40 @@ RESPONSE — return ONLY valid JSON, no markdown, no code blocks:
   "fallback_sql": null
 }}
 
+INTENT → METRIC MAPPING (always follow these):
+- "which components fail / fail most / failure by component" → metric: failure_count_by_component
+- "failure by brand / which brand fails" → metric: failure_count_by_brand
+- "failure trend / quarterly failures" → metric: failure_trend_by_quarter
+- "cost by brand / total cost brand" → metric: total_cost_by_brand
+- "cost by workshop" → metric: total_cost_by_workshop
+- "cost trend / monthly cost" → metric: cost_trend_by_month
+- "cost by component / component cost" → metric: total_cost_by_component_category
+- "downtime by brand" → metric: downtime_by_brand
+- "downtime by component" → metric: downtime_by_component_category
+- "scheduled vs unscheduled / maintenance ratio" → metric: scheduled_vs_unscheduled
+- "YoY / year over year cost" → metric: yoy_cost_comparison
+- "last 12 months / rolling 12" → metric: last_12_months_trend
+- "heatmap / brand month grid" → metric: cost_heatmap_brand_month
+- "scatter / cost vs downtime / correlation" → metric: cost_vs_downtime_scatter
+- "boxplot / distribution / cost spread" → metric: cost_distribution_by_brand
+- "waterfall / cost buildup / cumulative cost" → metric: cost_waterfall_by_category
+- "treemap / hierarchical / fleet cost tree" → metric: fleet_cost_treemap
+- "histogram / downtime distribution" → metric: downtime_histogram
+
+CRITICAL MODIFY vs ADD RULES:
+- If SELECTED CARD exists in BOARD_CONTEXT AND user says "change", "switch", "modify", "convert", "make it", "turn into" → ALWAYS emit modify_chart (NEVER add_chart)
+- modify_chart requires: card_id = the selected card's id, plus chart_type and/or filters to change
+- If user asks to ADD information to an existing chart (e.g. "include X in this chart") → explain you cannot merge metrics, but offer to add a separate companion chart alongside
+- NEVER emit add_chart when a card is selected and user is asking to modify it
+
 RULES:
-1. ALWAYS add a chart immediately for any data question.
-2. The narrative must be plain English only.
+1. ALWAYS add a chart immediately for any data question (unless modifying a selected card).
+2. The narrative must be plain English only — no metric_id, no JSON, no code.
 3. For time-aware queries add time_shortcut to the filters.
 4. Multiple charts fine — "compare X and Y" → two add_chart actions.
 5. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
-6. Never mention metric_id or technical names in the narrative — use the human title.
+6. When emitting modify_chart, confirm in narrative: "I've changed [title] to a [type] chart."
+7. When asked to merge metrics into one chart → explain it's not possible, offer companion chart instead.
 """
 
 
