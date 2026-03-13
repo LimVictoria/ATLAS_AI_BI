@@ -418,17 +418,15 @@ STACKED_BAR_METRICS = {"cost_by_brand_and_component", "downtime_by_brand_and_com
 @router.post("/")
 def run_metric(req: QueryRequest):
     # Safety remap: if stacked_bar requested on a non-stacked metric, swap to correct metric
-    if req.chart_type == "stacked_bar" and req.metric_id not in STACKED_BAR_METRICS:
-        if "downtime" in req.metric_id:
-            req.metric_id = "downtime_by_brand_and_component"
-        else:
-            req.metric_id = "cost_by_brand_and_component"
+    metric_id = req.metric_id
+    if req.chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
+        metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
 
-    metric = METRICS.get(req.metric_id)
+    metric = METRICS.get(metric_id)
     if not metric:
-        raise HTTPException(status_code=404, detail=f"Metric '{req.metric_id}' not found")
+        raise HTTPException(status_code=404, detail=f"Metric '{metric_id}' not found")
 
-    sql = get_metric_sql(req.metric_id, req.filters or {})
+    sql = get_metric_sql(metric_id, req.filters or {})
     if not sql:
         raise HTTPException(status_code=400, detail="Could not build SQL")
 
@@ -444,7 +442,7 @@ def run_metric(req: QueryRequest):
 
     chart_json = _build_chart(df, metric, chart_type)
     return {
-        "metric_id":        req.metric_id,
+        "metric_id":        metric_id,
         "title":            metric["title"],
         "category":         metric["category"],
         "chart_type":       chart_type,
