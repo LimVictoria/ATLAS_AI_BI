@@ -114,14 +114,24 @@ CRITICAL MODIFY vs ADD RULES:
 - If user asks to ADD information to an existing chart (e.g. "include X in this chart") → explain you cannot merge metrics, but offer to add a separate companion chart alongside
 - NEVER emit add_chart when a card is selected and user is asking to modify it
 
+CONVERSATIONAL vs VISUAL RULES:
+- "why", "what causes", "explain", "is it because", "reason" → answer in narrative ONLY, use data_preview values to reason, NO chart unless user also asks to visualise
+- "show me", "visualise", "chart", "plot", "display" → add chart
+- "what is the average / total / count" AND a chart for that metric already exists → answer from data_preview in narrative, do NOT add duplicate chart
+- "can we find out X" → check if X is already visible in data_preview first; if yes, answer directly; if no, add a chart
+- If the board already has a chart for the same metric → NEVER add it again, reference it instead ("As shown in the [title] chart...")
+
 RULES:
-1. ALWAYS add a chart immediately for any data question (unless modifying a selected card).
+1. Add a chart for data questions ONLY if that metric is not already on the board.
 2. The narrative must be plain English only — no metric_id, no JSON, no code.
-3. For time-aware queries add time_shortcut to the filters.
-4. Multiple charts fine — "compare X and Y" → two add_chart actions.
-5. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
-6. When emitting modify_chart, confirm in narrative: "I've changed [title] to a [type] chart."
-7. When asked to merge metrics into one chart → explain it's not possible, offer companion chart instead.
+3. Use data_preview values in BOARD_CONTEXT to give specific numeric answers (e.g. "Scania's average is MYR 1,243").
+4. For time-aware queries add time_shortcut to the filters.
+5. Multiple charts fine — "compare X and Y" → two add_chart actions.
+6. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
+7. When emitting modify_chart, confirm in narrative: "I've changed [title] to a [type] chart."
+8. When asked to merge metrics into one chart → explain it's not possible, offer companion chart instead.
+9. For "why" questions: reason using data_preview values, give a 2-3 sentence insight using specific numbers. Only add a new chart if it shows something genuinely new.
+10. data_preview columns for total_cost_by_brand include: fleet_size (number of unique trucks), cost_per_vehicle (total cost ÷ fleet), events_per_vehicle (maintenance frequency). Use these to distinguish "more trucks" vs "more expensive per truck" explanations.
 """
 
 
@@ -198,6 +208,20 @@ def build_board_context_prompt(board_context: BoardContext | None) -> str:
         if metric:
             lines.append(f"    description: {metric.get('description','')}")
             lines.append(f"    available_charts: {metric.get('available_charts', [])}")
+        # Fetch live summary data so LLM can reason about actual values
+        try:
+            from api.query import QueryRequest, run_metric as _run_metric
+            req = QueryRequest(metric_id=c.metric_id, chart_type="table", filters=c.filters or {})
+            result = _run_metric(req)
+            summary = result.get("summary", [])
+            if summary:
+                # Format top rows as readable key=value pairs
+                row_strs = []
+                for row in summary[:5]:
+                    row_strs.append(", ".join(f"{k}={v}" for k, v in row.items()))
+                lines.append(f"    data_preview (top {len(summary)} rows): {' | '.join(row_strs)}")
+        except Exception as e:
+            pass  # silently skip if data fetch fails
 
     selected = [c for c in board_context.charts_on_canvas if c.id in (board_context.selected_ids or [])]
     if selected:
