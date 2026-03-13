@@ -17,6 +17,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL   = "llama-3.3-70b-versatile"
+GROQ_MODEL_FALLBACK = "llama-3.1-8b-instant"   # faster, higher rate limit
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
 METRICS_INDEX = get_metrics_index()
@@ -150,15 +151,35 @@ class ChatRequest(BaseModel):
     board_context: Optional[BoardContext] = None
 
 
-async def call_groq(messages: list[dict]) -> str:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": GROQ_MODEL, "messages": messages, "temperature": 0.1, "max_tokens": 1500},
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+async def call_groq(messages: list[dict], model: str = None) -> str:
+    import asyncio
+    chosen_model = model or GROQ_MODEL
+    async with httpx.AsyncClient(timeout=40) as client:
+        for attempt in range(3):
+            try:
+                response = await client.post(
+                    GROQ_URL,
+                    headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                    json={"model": chosen_model, "messages": messages, "temperature": 0.1, "max_tokens": 1500},
+                )
+                if response.status_code == 429:
+                    # Rate limited — check retry-after header, wait, then try fallback model
+                    retry_after = float(response.headers.get("retry-after", 2 * (attempt + 1)))
+                    wait = min(retry_after, 8)
+                    print(f"[Groq] 429 rate limit on {chosen_model}, waiting {wait}s (attempt {attempt+1})")
+                    await asyncio.sleep(wait)
+                    if chosen_model != GROQ_MODEL_FALLBACK:
+                        chosen_model = GROQ_MODEL_FALLBACK  # switch to fast model
+                    continue
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"]
+            except httpx.TimeoutException:
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                raise
+        # All retries exhausted
+        raise Exception(f"Groq rate limit exceeded after 3 attempts. Please wait a moment and try again.")
 
 
 def build_board_context_prompt(board_context: BoardContext | None) -> str:
@@ -282,7 +303,10 @@ async def chat(req: ChatRequest):
     except json.JSONDecodeError:
         parsed = {"narrative": raw.strip(), "ui_actions": [], "fallback_sql": None}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err = str(e)
+        if "rate limit" in err.lower() or "429" in err:
+            raise HTTPException(status_code=429, detail="Groq rate limit reached. Please wait a few seconds and try again.")
+        raise HTTPException(status_code=500, detail=err)
 
     # Sanitise narrative
     narrative = parsed.get("narrative", "")
