@@ -60,7 +60,7 @@ export default function AIPanel() {
   }
 
   return (
-    <div className="ai-panel">
+    <div style={{ width: "380px", flexShrink: 0, display: "flex", flexDirection: "column", height: "100vh", background: "#FFFFFF", borderRight: "1px solid #E8ECF0", overflow: "hidden" }}>
       {/* Header */}
       <div style={{
         height: 52, display: "flex", alignItems: "center",
