@@ -41,3 +41,12 @@ export const saveBoard = (board_state: any[], user_id: string = "default") =>
 
 export const loadBoard = (user_id: string = "default") =>
   API.get(`/chat/board/${user_id}`).then(r => r.data)
+
+export const rerenderChart = (
+  sql: string,
+  chart_type: string,
+  title: string,
+  category: string,
+  filters?: Record<string, any>
+) =>
+  API.post("/chat/rerender", { sql, chart_type, title, category, filters }).then(r => r.data)
