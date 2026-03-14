@@ -15,6 +15,7 @@ export interface ChartCard {
   sql?: string
   base_sql?: string
   filter_suggestions?: Array<{dim: string; value: string; label: string}>
+  showFilters?: boolean
   selected: boolean
   loading: boolean
   x: number
