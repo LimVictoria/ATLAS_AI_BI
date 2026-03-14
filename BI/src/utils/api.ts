@@ -5,8 +5,13 @@ const API = axios.create({
   timeout: 60000,
 })
 
+// Path B: run arbitrary SQL
+export const runSQL = (sql: string, chart_type?: string, title?: string, category?: string) =>
+  API.post("/query/", { sql, chart_type, title, category }).then(r => r.data)
+
+// Legacy alias kept for any remaining Path A references
 export const runMetric = (metric_id: string, chart_type?: string, filters?: Record<string, any>) =>
-  API.post("/query/", { metric_id, chart_type, filters }).then(r => r.data)
+  API.post("/query/", { sql: `SELECT '${metric_id}' AS metric_removed`, chart_type }).then(r => r.data)
 
 export const sendChat = (
   session_id: string,
