@@ -72,6 +72,56 @@ def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+TIME_COLS_SET = {"year_month","month_name","year_quarter","year","month","service_date"}
+MONTH_ABBR = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+              7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+
+def _format_time_labels(df: pd.DataFrame, x_col: str) -> tuple:
+    """
+    Convert year_month (YYYY-MM) to YYMon format (e.g. '20Jan').
+    Returns (df with label column, label_col_name).
+    """
+    if x_col not in df.columns:
+        return df, x_col
+    col_lower = x_col.lower()
+    if col_lower == "year_month":
+        def fmt(v):
+            try:
+                parts = str(v).split("-")
+                yr  = parts[0][-2:]  # last 2 digits of year
+                mo  = int(parts[1])
+                return f"{yr}{MONTH_ABBR.get(mo, parts[1])}"
+            except Exception:
+                return str(v)
+        df = df.copy()
+        df["_label"] = df[x_col].apply(fmt)
+        return df, "_label"
+    elif col_lower == "month_name":
+        # month_name without year — just return as-is
+        return df, x_col
+    elif col_lower in {"year","month"}:
+        return df, x_col
+    return df, x_col
+
+
+def _sort_time(df: pd.DataFrame, x_col: str) -> pd.DataFrame:
+    """Sort dataframe by time column ascending."""
+    if x_col not in df.columns:
+        return df
+    col_lower = x_col.lower()
+    if col_lower == "year_month":
+        return df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
+    elif col_lower in {"year","month"}:
+        return df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
+    elif col_lower == "month_name":
+        month_order = ["January","February","March","April","May","June",
+                       "July","August","September","October","November","December"]
+        df = df.copy()
+        df["_sort"] = df[x_col].map({m:i for i,m in enumerate(month_order)})
+        df = df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+    return df
+
+
 def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
     df = _clean_df(df)
     x_col = metric.get("x_col")
@@ -81,13 +131,15 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Bar ──────────────────────────────────────────────────────────────────
     if chart_type == "bar":
-        # Sort time-based x-axis ascending
-        time_cols_set = {"year_month","month_name","year_quarter","year","month","service_date"}
-        if x_col and x_col.lower() in time_cols_set:
-            df = df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
+        if x_col and x_col.lower() in TIME_COLS_SET:
+            df = _sort_time(df, x_col)
+            df, x_display = _format_time_labels(df, x_col)
+        else:
+            x_display = x_col
+        n = len(df)
         colors = _palette(cat, n)
         fig = go.Figure(go.Bar(
-            x=df[x_col], y=df[y_col],
+            x=df[x_display], y=df[y_col],
             marker=dict(color=colors, cornerradius=5, line=dict(width=0)),
             text=df[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v, (int, float)) else str(v)),
             textposition="outside",
@@ -99,9 +151,10 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
         bar_layout = {**BASE}
         if is_time_x and n > 12:
             bar_layout["xaxis"] = {**bar_layout.get("xaxis", {}),
-                "rangeslider": dict(visible=True, thickness=0.04),
+                "fixedrange": False,
                 "tickangle": -45,
             }
+            bar_layout["dragmode"] = "pan"
             bar_layout["margin"] = dict(t=12, r=20, b=80, l=70)
         fig.update_layout(**bar_layout)
         fig.update_layout(
@@ -111,15 +164,17 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Line ─────────────────────────────────────────────────────────────────
     elif chart_type == "line":
-        # Sort time axis ascending
-        time_cols_set = {"year_month","month_name","year_quarter","year","month","service_date"}
-        if x_col and x_col.lower() in time_cols_set:
-            df = df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
+        if x_col and x_col.lower() in TIME_COLS_SET:
+            df = _sort_time(df, x_col)
+            df, x_display = _format_time_labels(df, x_col)
+        else:
+            x_display = x_col
+        n = len(df)
         color = PALETTES.get(cat, PALETTES["General"])[1]
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=df[x_col], y=df[y_col],
+            x=df[x_display], y=df[y_col],
             mode="lines+markers+text",
             line=dict(color=color, width=2.5, shape="spline", smoothing=0.8),
             marker=dict(size=5, color=color, line=dict(color="#FFFFFF", width=1.5)),
@@ -133,9 +188,10 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
         line_layout = {**BASE}
         if n > 12:
             line_layout["xaxis"] = {**line_layout.get("xaxis", {}),
-                "rangeslider": dict(visible=True, thickness=0.04),
+                "fixedrange": False,
                 "tickangle": -45,
             }
+            line_layout["dragmode"] = "pan"
             line_layout["margin"] = dict(t=12, r=20, b=80, l=70)
         fig.update_layout(**line_layout)
         fig.update_layout(
@@ -411,23 +467,48 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
     # ── Stacked Bar ───────────────────────────────────────────────────────────
     elif chart_type == "stacked_bar":
         group_col = metric.get("group_col", "component_category")
+        # Sort time axis if x is time-based
+        if x_col and x_col.lower() in TIME_COLS_SET:
+            df = _sort_time(df, x_col)
+            df, x_display = _format_time_labels(df, x_col)
+        else:
+            x_display = x_col
         groups = df[group_col].unique().tolist() if group_col in df.columns else []
-        palette = [
-            "#1D4ED8","#7C3AED","#DC2626","#059669","#D97706",
-            "#0891B2","#DB2777","#EA580C","#65A30D","#0284C7",
-            "#9333EA","#16A34A","#CA8A04","#0369A1","#B91C1C",
+        # Visually distinct palette — NOT a blue gradient
+        distinct_palette = [
+            "#2563EB","#DC2626","#059669","#D97706","#7C3AED",
+            "#0891B2","#DB2777","#EA580C","#65A30D","#9333EA",
+            "#16A34A","#CA8A04","#0369A1","#B91C1C","#4F46E5",
         ]
         fig = go.Figure()
         for i, grp in enumerate(groups):
             subset = df[df[group_col] == grp]
             fig.add_trace(go.Bar(
                 name=str(grp),
-                x=subset[x_col],
+                x=subset[x_display],
                 y=subset[y_col],
-                marker=dict(color=palette[i % len(palette)], line=dict(width=0)),
+                marker=dict(color=distinct_palette[i % len(distinct_palette)], line=dict(width=0)),
                 hovertemplate=f"<b>%{{x}}</b><br>{grp}: <b>%{{y:,.0f}}</b><extra></extra>",
             ))
-        fig.update_layout(**{**BASE, "barmode": "stack"})
+        n_x = len(df[x_display].unique()) if x_display in df.columns else n
+        stacked_layout = {**BASE, "barmode": "stack"}
+        stacked_layout["showlegend"] = True
+        stacked_layout["legend"] = dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=10, color="#1E293B"),
+            bgcolor="rgba(0,0,0,0)",
+        )
+        if x_col and x_col.lower() in TIME_COLS_SET and n_x > 12:
+            stacked_layout["xaxis"] = {**stacked_layout.get("xaxis", {}),
+                "fixedrange": False,
+                "tickangle": -45,
+            }
+            stacked_layout["dragmode"] = "pan"
+            stacked_layout["margin"] = dict(t=40, r=20, b=80, l=70)
+        else:
+            stacked_layout["margin"] = dict(t=40, r=20, b=60, l=70)
+        fig.update_layout(**stacked_layout)
         fig.update_layout(
             xaxis_title=x_col.replace("_", " ").title() if x_col else "Brand",
             yaxis_title=y_col.replace("_", " ").title() if y_col else "Total Cost (MYR)",
