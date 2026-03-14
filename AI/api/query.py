@@ -81,13 +81,29 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Bar ──────────────────────────────────────────────────────────────────
     if chart_type == "bar":
+        # Sort time-based x-axis ascending
+        time_cols_set = {"year_month","month_name","year_quarter","year","month","service_date"}
+        if x_col and x_col.lower() in time_cols_set:
+            df = df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
         colors = _palette(cat, n)
         fig = go.Figure(go.Bar(
             x=df[x_col], y=df[y_col],
             marker=dict(color=colors, cornerradius=5, line=dict(width=0)),
+            text=df[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v, (int, float)) else str(v)),
+            textposition="outside",
+            textfont=dict(size=9, color="#475569"),
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
-        fig.update_layout(**BASE)
+        # Enable horizontal scroll for time series with many points
+        is_time_x = x_col and x_col.lower() in time_cols_set
+        bar_layout = {**BASE}
+        if is_time_x and n > 12:
+            bar_layout["xaxis"] = {**bar_layout.get("xaxis", {}),
+                "rangeslider": dict(visible=True, thickness=0.04),
+                "tickangle": -45,
+            }
+            bar_layout["margin"] = dict(t=12, r=20, b=80, l=70)
+        fig.update_layout(**bar_layout)
         fig.update_layout(
             xaxis_title=x_col.replace("_", " ").title() if x_col else "",
             yaxis_title=y_col.replace("_", " ").title() if y_col else "",
@@ -95,19 +111,33 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Line ─────────────────────────────────────────────────────────────────
     elif chart_type == "line":
+        # Sort time axis ascending
+        time_cols_set = {"year_month","month_name","year_quarter","year","month","service_date"}
+        if x_col and x_col.lower() in time_cols_set:
+            df = df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
         color = PALETTES.get(cat, PALETTES["General"])[1]
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=df[x_col], y=df[y_col],
-            mode="lines+markers",
+            mode="lines+markers+text",
             line=dict(color=color, width=2.5, shape="spline", smoothing=0.8),
             marker=dict(size=5, color=color, line=dict(color="#FFFFFF", width=1.5)),
+            text=df[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v, (int, float)) else ""),
+            textposition="top center",
+            textfont=dict(size=9, color="#475569"),
             fill="tozeroy",
             fillcolor=f"rgba({r},{g},{b},0.07)",
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
-        fig.update_layout(**BASE)
+        line_layout = {**BASE}
+        if n > 12:
+            line_layout["xaxis"] = {**line_layout.get("xaxis", {}),
+                "rangeslider": dict(visible=True, thickness=0.04),
+                "tickangle": -45,
+            }
+            line_layout["margin"] = dict(t=12, r=20, b=80, l=70)
+        fig.update_layout(**line_layout)
         fig.update_layout(
             xaxis_title=x_col.replace("_", " ").title() if x_col else "",
             yaxis_title=y_col.replace("_", " ").title() if y_col else "",
@@ -175,6 +205,9 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             x=df_sorted[x_col], y=df_sorted[y_col],
             name=y_col.replace("_", " ").title(),
             marker=dict(color=colors, cornerradius=5, line=dict(width=0)),
+            text=df_sorted[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v,(int,float)) else ""),
+            textposition="outside",
+            textfont=dict(size=9, color="#475569"),
             hovertemplate=f"<b>%{{x}}</b><br>Value: <b>%{{y:,.1f}}</b><extra></extra>",
             yaxis="y",
         ))
@@ -305,7 +338,8 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             mode="markers+text",
             text=df[label_c].tolist() if label_c in df.columns else None,
             textposition="top center",
-            textfont=dict(size=10, color="#475569"),
+            textfont=dict(size=9, color="#475569"),
+            texttemplate="%{text}",
             marker=dict(
                 size=sizes or 14,
                 color=color,
