@@ -259,7 +259,12 @@ export default function ChartCard({ card }: Props) {
       if (card.sql) {
         const { rerenderChart } = await import("@/utils/api")
         const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
-        updateChart(card.id, { chart_data: result.chart, filters: newFilters, loading: false })
+        updateChart(card.id, {
+          chart_data: result.chart,
+          sql: result.sql || card.sql,
+          filters: newFilters,
+          loading: false,
+        })
       } else {
         // No SQL — just update filters display without re-fetching
         updateChart(card.id, { filters: newFilters, loading: false })
@@ -277,10 +282,11 @@ export default function ChartCard({ card }: Props) {
     updateChart(card.id, { loading: true })
     try {
       const { rerenderChart } = await import("@/utils/api")
-      const result = await rerenderChart(card.sql, type, card.title, card.category)
+      const result = await rerenderChart(card.sql, type, card.title, card.category, card.filters || {})
       updateChart(card.id, {
         chart_type: type as ChartType,
         chart_data: result.chart,
+        sql: result.sql || card.sql,
         available_charts: result.available_charts || card.available_charts,
         loading: false,
       })
