@@ -81,3 +81,31 @@ def clear_messages(user_id: str = DEFAULT_USER) -> None:
             .delete().eq("user_id", user_id).execute()
     except Exception as e:
         print(f"[Supabase] clear_messages failed: {e}")
+
+
+# ── User memory persistence ────────────────────────────────────────────────────
+
+def save_memory(user_id: str, memory: dict) -> None:
+    """Save extracted user preferences to bi_user_memory table."""
+    try:
+        get_supabase().table("bi_user_memory").upsert({
+            "user_id":    user_id,
+            "memory":     memory,
+            "updated_at": datetime.utcnow().isoformat(),
+        }, on_conflict="user_id").execute()
+    except Exception as e:
+        print(f"[Supabase] save_memory failed: {e}")
+
+
+def load_memory(user_id: str = DEFAULT_USER) -> dict:
+    """Load user preferences from bi_user_memory table."""
+    try:
+        resp = get_supabase().table("bi_user_memory") \
+            .select("memory") \
+            .eq("user_id", user_id) \
+            .limit(1).execute()
+        if resp.data:
+            return resp.data[0]["memory"] or {}
+    except Exception as e:
+        print(f"[Supabase] load_memory failed: {e}")
+    return {}
