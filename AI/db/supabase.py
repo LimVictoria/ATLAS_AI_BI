@@ -86,7 +86,8 @@ def clear_messages(user_id: str = DEFAULT_USER) -> None:
 # ── User memory persistence ────────────────────────────────────────────────────
 
 def save_memory(user_id: str, memory: dict) -> None:
-    """Save extracted user preferences to bi_user_memory table."""
+    """Save extracted user preferences to bi_user_memory table.
+    Silently skips if table does not exist yet."""
     try:
         get_supabase().table("bi_user_memory").upsert({
             "user_id":    user_id,
@@ -94,11 +95,13 @@ def save_memory(user_id: str, memory: dict) -> None:
             "updated_at": datetime.utcnow().isoformat(),
         }, on_conflict="user_id").execute()
     except Exception as e:
-        print(f"[Supabase] save_memory failed: {e}")
+        # Table may not exist yet — non-fatal, memory just won't persist
+        print(f"[Supabase] save_memory skipped: {e}")
 
 
 def load_memory(user_id: str = DEFAULT_USER) -> dict:
-    """Load user preferences from bi_user_memory table."""
+    """Load user preferences from bi_user_memory table.
+    Returns empty dict if table does not exist yet."""
     try:
         resp = get_supabase().table("bi_user_memory") \
             .select("memory") \
@@ -107,5 +110,5 @@ def load_memory(user_id: str = DEFAULT_USER) -> dict:
         if resp.data:
             return resp.data[0]["memory"] or {}
     except Exception as e:
-        print(f"[Supabase] load_memory failed: {e}")
+        print(f"[Supabase] load_memory skipped: {e}")
     return {}
