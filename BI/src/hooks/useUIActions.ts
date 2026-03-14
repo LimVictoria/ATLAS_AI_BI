@@ -34,6 +34,12 @@ export async function processUIActions(actions: any[]) {
     }
 
     // ── Modify existing card (chart type or filters) ───────────────────────
+    if (action.action === "show_filter") {
+      const { updateChart } = useDashboardStore.getState()
+      if (action.card_id) updateChart(action.card_id, { showFilters: true })
+      continue
+    }
+
     if (action.action === "modify_chart") {
       const { charts: currentCharts } = useDashboardStore.getState()
       const cardId = action.card_id
