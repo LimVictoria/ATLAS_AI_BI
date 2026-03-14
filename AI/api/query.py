@@ -3,13 +3,14 @@ ATLAS BI — /query endpoint
 """
 import json
 import plotly.graph_objects as go
+import plotly.utils
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
 from db.duckdb_session import run_query
-# metrics.py removed — Path B uses dynamic SQL via nodes.py
+from metrics import METRICS, get_metric_sql
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -61,7 +62,7 @@ def _palette(category: str, n: int) -> list:
 
 
 def _to_json(fig) -> str:
-    return fig.to_json()
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 
 def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -69,56 +70,6 @@ def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.columns:
         if df[col].dtype == object:
             df[col] = df[col].fillna("—").astype(str)
-    return df
-
-
-TIME_COLS_SET = {"year_month","month_name","year_quarter","year","month","service_date"}
-MONTH_ABBR = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
-              7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
-
-def _format_time_labels(df: pd.DataFrame, x_col: str) -> tuple:
-    """
-    Convert year_month (YYYY-MM) to YYMon format (e.g. '20Jan').
-    Returns (df with label column, label_col_name).
-    """
-    if x_col not in df.columns:
-        return df, x_col
-    col_lower = x_col.lower()
-    if col_lower == "year_month":
-        def fmt(v):
-            try:
-                parts = str(v).split("-")
-                yr  = parts[0][-2:]  # last 2 digits of year
-                mo  = int(parts[1])
-                return f"{yr}{MONTH_ABBR.get(mo, parts[1])}"
-            except Exception:
-                return str(v)
-        df = df.copy()
-        df["_label"] = df[x_col].apply(fmt)
-        return df, "_label"
-    elif col_lower == "month_name":
-        # month_name without year — just return as-is
-        return df, x_col
-    elif col_lower in {"year","month"}:
-        return df, x_col
-    return df, x_col
-
-
-def _sort_time(df: pd.DataFrame, x_col: str) -> pd.DataFrame:
-    """Sort dataframe by time column ascending."""
-    if x_col not in df.columns:
-        return df
-    col_lower = x_col.lower()
-    if col_lower == "year_month":
-        return df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
-    elif col_lower in {"year","month"}:
-        return df.sort_values(by=x_col, ascending=True).reset_index(drop=True)
-    elif col_lower == "month_name":
-        month_order = ["January","February","March","April","May","June",
-                       "July","August","September","October","November","December"]
-        df = df.copy()
-        df["_sort"] = df[x_col].map({m:i for i,m in enumerate(month_order)})
-        df = df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
     return df
 
 
@@ -131,38 +82,13 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Bar ──────────────────────────────────────────────────────────────────
     if chart_type == "bar":
-        # For multi-group data (multiple rows per x), aggregate by summing y
-        if x_col and x_col in df.columns and y_col and y_col in df.columns:
-            if df[x_col].nunique() < len(df):
-                df = df.groupby(x_col, as_index=False)[y_col].sum()
-                n = len(df)
-
-        if x_col and x_col.lower() in TIME_COLS_SET:
-            df = _sort_time(df, x_col)
-            df, x_display = _format_time_labels(df, x_col)
-        else:
-            x_display = x_col
-        n = len(df)
         colors = _palette(cat, n)
         fig = go.Figure(go.Bar(
-            x=df[x_display], y=df[y_col],
+            x=df[x_col], y=df[y_col],
             marker=dict(color=colors, cornerradius=5, line=dict(width=0)),
-            text=df[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v, (int, float)) else str(v)),
-            textposition="outside",
-            textfont=dict(size=9, color="#475569"),
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
-        # Enable horizontal scroll for time series with many points
-        is_time_x = x_col and x_col.lower() in TIME_COLS_SET
-        bar_layout = {**BASE}
-        if is_time_x and n > 12:
-            bar_layout["xaxis"] = {**bar_layout.get("xaxis", {}),
-                "fixedrange": False,
-                "tickangle": -45,
-            }
-            bar_layout["dragmode"] = "pan"
-            bar_layout["margin"] = dict(t=12, r=20, b=80, l=70)
-        fig.update_layout(**bar_layout)
+        fig.update_layout(**BASE)
         fig.update_layout(
             xaxis_title=x_col.replace("_", " ").title() if x_col else "",
             yaxis_title=y_col.replace("_", " ").title() if y_col else "",
@@ -170,36 +96,19 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Line ─────────────────────────────────────────────────────────────────
     elif chart_type == "line":
-        if x_col and x_col.lower() in TIME_COLS_SET:
-            df = _sort_time(df, x_col)
-            df, x_display = _format_time_labels(df, x_col)
-        else:
-            x_display = x_col
-        n = len(df)
         color = PALETTES.get(cat, PALETTES["General"])[1]
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=df[x_display], y=df[y_col],
-            mode="lines+markers+text",
+            x=df[x_col], y=df[y_col],
+            mode="lines+markers",
             line=dict(color=color, width=2.5, shape="spline", smoothing=0.8),
             marker=dict(size=5, color=color, line=dict(color="#FFFFFF", width=1.5)),
-            text=df[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v, (int, float)) else ""),
-            textposition="top center",
-            textfont=dict(size=9, color="#475569"),
             fill="tozeroy",
             fillcolor=f"rgba({r},{g},{b},0.07)",
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
-        line_layout = {**BASE}
-        if n > 12:
-            line_layout["xaxis"] = {**line_layout.get("xaxis", {}),
-                "fixedrange": False,
-                "tickangle": -45,
-            }
-            line_layout["dragmode"] = "pan"
-            line_layout["margin"] = dict(t=12, r=20, b=80, l=70)
-        fig.update_layout(**line_layout)
+        fig.update_layout(**BASE)
         fig.update_layout(
             xaxis_title=x_col.replace("_", " ").title() if x_col else "",
             yaxis_title=y_col.replace("_", " ").title() if y_col else "",
@@ -228,11 +137,6 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Table ─────────────────────────────────────────────────────────────────
     elif chart_type == "table":
-        # Sort by first time column found, then by first numeric column
-        for tc in ["year_month","year_quarter","year","month_name","month","service_date"]:
-            if tc in df.columns:
-                df = _sort_time(df, tc)
-                break
         col_names = df.columns.tolist()
         header_vals = [f"<b>{c.replace('_', ' ').title()}</b>" for c in col_names]
         row_fill = ["#F8FAFC" if i % 2 == 0 else "#FFFFFF" for i in range(n)]
@@ -272,9 +176,6 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             x=df_sorted[x_col], y=df_sorted[y_col],
             name=y_col.replace("_", " ").title(),
             marker=dict(color=colors, cornerradius=5, line=dict(width=0)),
-            text=df_sorted[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v,(int,float)) else ""),
-            textposition="outside",
-            textfont=dict(size=9, color="#475569"),
             hovertemplate=f"<b>%{{x}}</b><br>Value: <b>%{{y:,.1f}}</b><extra></extra>",
             yaxis="y",
         ))
@@ -405,8 +306,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             mode="markers+text",
             text=df[label_c].tolist() if label_c in df.columns else None,
             textposition="top center",
-            textfont=dict(size=9, color="#475569"),
-            texttemplate="%{text}",
+            textfont=dict(size=10, color="#475569"),
             marker=dict(
                 size=sizes or 14,
                 color=color,
@@ -475,56 +375,6 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             yaxis_title="Frequency",
         )
 
-    # ── Stacked Bar ───────────────────────────────────────────────────────────
-    elif chart_type == "stacked_bar":
-        group_col = metric.get("group_col", "component_category")
-        # Sort time axis if x is time-based
-        if x_col and x_col.lower() in TIME_COLS_SET:
-            df = _sort_time(df, x_col)
-            df, x_display = _format_time_labels(df, x_col)
-        else:
-            x_display = x_col
-        groups = df[group_col].unique().tolist() if group_col in df.columns else []
-        # Visually distinct palette — NOT a blue gradient
-        distinct_palette = [
-            "#2563EB","#DC2626","#059669","#D97706","#7C3AED",
-            "#0891B2","#DB2777","#EA580C","#65A30D","#9333EA",
-            "#16A34A","#CA8A04","#0369A1","#B91C1C","#4F46E5",
-        ]
-        fig = go.Figure()
-        for i, grp in enumerate(groups):
-            subset = df[df[group_col] == grp]
-            fig.add_trace(go.Bar(
-                name=str(grp),
-                x=subset[x_display],
-                y=subset[y_col],
-                marker=dict(color=distinct_palette[i % len(distinct_palette)], line=dict(width=0)),
-                hovertemplate=f"<b>%{{x}}</b><br>{grp}: <b>%{{y:,.0f}}</b><extra></extra>",
-            ))
-        n_x = len(df[x_display].unique()) if x_display in df.columns else n
-        stacked_layout = {**BASE, "barmode": "stack"}
-        stacked_layout["showlegend"] = True
-        stacked_layout["legend"] = dict(
-            orientation="h", yanchor="bottom", y=1.02,
-            xanchor="right", x=1,
-            font=dict(size=10, color="#1E293B"),
-            bgcolor="rgba(0,0,0,0)",
-        )
-        if x_col and x_col.lower() in TIME_COLS_SET and n_x > 12:
-            stacked_layout["xaxis"] = {**stacked_layout.get("xaxis", {}),
-                "fixedrange": False,
-                "tickangle": -45,
-            }
-            stacked_layout["dragmode"] = "pan"
-            stacked_layout["margin"] = dict(t=40, r=20, b=80, l=70)
-        else:
-            stacked_layout["margin"] = dict(t=40, r=20, b=60, l=70)
-        fig.update_layout(**stacked_layout)
-        fig.update_layout(
-            xaxis_title=x_col.replace("_", " ").title() if x_col else "Brand",
-            yaxis_title=y_col.replace("_", " ").title() if y_col else "Total Cost (MYR)",
-        )
-
     else:
         return _build_chart(df, metric, "bar")
 
@@ -532,63 +382,102 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
 
 class QueryRequest(BaseModel):
-    sql: str
+    metric_id: str
     chart_type: Optional[str] = None
-    title: str = "Query Result"
-    category: str = "General"
-    x_col: Optional[str] = None
-    y_col: Optional[str] = None
-    group_col: Optional[str] = None
+    filters: Optional[dict] = {}
 
+
+# Metrics that natively support stacked_bar (have group_col)
+STACKED_BAR_METRICS = {"cost_by_brand_and_component", "downtime_by_brand_and_component"}
 
 @router.post("/")
-def run_sql_query(req: QueryRequest):
-    """Execute arbitrary SQL and return a chart. Used by Path B agent."""
-    if not req.sql.strip().upper().startswith("SELECT"):
-        raise HTTPException(status_code=400, detail="Only SELECT queries allowed")
+def run_metric(req: QueryRequest):
+    # Safety remap: if stacked_bar requested on a non-stacked metric, swap to correct metric
+    if req.chart_type == "stacked_bar" and req.metric_id not in STACKED_BAR_METRICS:
+        if "downtime" in req.metric_id:
+            req.metric_id = "downtime_by_brand_and_component"
+        else:
+            req.metric_id = "cost_by_brand_and_component"
+
+    metric = METRICS.get(req.metric_id)
+    if not metric:
+        raise HTTPException(status_code=404, detail=f"Metric '{req.metric_id}' not found")
+
+    sql = get_metric_sql(req.metric_id, req.filters or {})
+    if not sql:
+        raise HTTPException(status_code=400, detail="Could not build SQL")
+
     try:
-        df = run_query(req.sql)
+        df = run_query(sql)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query error: {str(e)}")
-    if df.empty:
-        raise HTTPException(status_code=400, detail="Query returned no rows")
 
-    from agent.nodes import _infer_meta, _smart_available_charts, _auto_chart_type
-    df       = _clean_df(df)
-    cols     = df.columns.tolist()
-    meta     = _infer_meta(cols)
-    meta["category"] = req.category
-    if req.x_col:
-        meta["x_col"] = req.x_col
-    if req.y_col:
-        meta["y_col"] = req.y_col
-    if req.group_col:
-        meta["group_col"] = req.group_col
+    chart_type = req.chart_type or metric["default_chart"]
+    available = metric.get("available_charts", ["bar"])
+    if chart_type not in available:
+        chart_type = metric["default_chart"]
 
-    chart_type = req.chart_type or _auto_chart_type(cols)
-    try:
-        chart_json = _build_chart(df, meta, chart_type)
-    except Exception:
-        chart_json = _build_chart(df, meta, "table")
-        chart_type = "table"
-
-    available = _smart_available_charts(cols, df, chart_type)
+    chart_json = _build_chart(df, metric, chart_type)
     return {
-        "chart":            chart_json,
+        "metric_id":        req.metric_id,
+        "title":            metric["title"],
+        "category":         metric["category"],
         "chart_type":       chart_type,
-        "title":            req.title,
-        "category":         req.category,
-        "sql":              req.sql,
+        "chart":            chart_json,
         "row_count":        len(df),
         "summary":          df.head(5).to_dict(orient="records"),
         "available_charts": available,
+        "sql":              sql,
     }
 
 
 @router.get("/metrics")
 def list_metrics():
-    """Legacy endpoint — returns empty list. metrics.py has been removed."""
-    return {"metrics": []}
+    from metrics import get_metrics_index
+    return {"metrics": get_metrics_index()}
 
 
+# ── Stacked Bar (appended) ────────────────────────────────────────────────────
+_ORIG_BUILD_CHART = _build_chart
 
+def _build_chart(df, metric, chart_type):
+    if chart_type == "stacked_bar":
+        import pandas as pd
+        df = _clean_df(df)
+        x_col     = metric.get("x_col", "brand")
+        y_col     = metric.get("y_col")
+        group_col = metric.get("group_col", "component_category")
+        cat       = metric.get("category", "General")
+
+        groups = df[group_col].unique().tolist()
+        palette = [
+            "#1D4ED8","#7C3AED","#DC2626","#059669","#D97706",
+            "#0891B2","#DB2777","#EA580C","#65A30D","#0284C7",
+            "#9333EA","#16A34A","#CA8A04","#0369A1","#B91C1C",
+        ]
+
+        fig = go.Figure()
+        for i, grp in enumerate(groups):
+            subset = df[df[group_col] == grp]
+            fig.add_trace(go.Bar(
+                name=str(grp),
+                x=subset[x_col],
+                y=subset[y_col],
+                marker=dict(color=palette[i % len(palette)], line=dict(width=0)),
+                hovertemplate=f"<b>%{{x}}</b><br>{grp}: <b>%{{y:,.0f}}</b><extra></extra>",
+            ))
+
+        stacked_layout = {**BASE}
+        stacked_layout["barmode"] = "stack"
+        stacked_layout["xaxis_title"] = x_col.replace("_", " ").title() if x_col else "Brand"
+        stacked_layout["yaxis_title"] = y_col.replace("_", " ").title() if y_col else "Total Cost (MYR)"
+        stacked_layout["legend"] = dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=11, color="#1E293B"),
+            bgcolor="rgba(0,0,0,0)",
+        )
+        fig.update_layout(**stacked_layout)
+        return _to_json(fig)
+
+    return _ORIG_BUILD_CHART(df, metric, chart_type)
