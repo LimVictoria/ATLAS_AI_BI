@@ -40,11 +40,20 @@ const CHART_ICONS: Record<string, React.ReactNode> = {
 const FILTER_OPTIONS: Record<string, string[]> = {
   brand: ["Scania", "Volvo", "Mercedes-Benz", "MAN", "Hino"],
   year: ["2020", "2021", "2022", "2023", "2024"],
-  quarter: ["1", "2", "3", "4"],
+  quarter: ["1", "2", "3", "4"],            // Q1-Q4, converted to months on backend
   fleet_segment: ["Heavy", "Medium", "Light"],
   maintenance_type: ["Scheduled", "Unscheduled"],
-  criticality_level: ["Critical", "High", "Medium"],
-  workshop_state: ["Selangor", "Johor", "Perak", "Kedah", "Penang"],
+  criticality_level: ["Critical", "High", "Medium", "Low"],
+  workshop_type: ["Authorised", "Independent"],  // real column values
+  region: ["Central", "Northern", "Southern", "Eastern", "Sabah", "Sarawak"],
+}
+
+// Filter display labels
+const FILTER_LABELS: Record<string, string> = {
+  brand: "Brand", year: "Year", quarter: "Quarter",
+  fleet_segment: "Fleet Segment", maintenance_type: "Maintenance Type",
+  criticality_level: "Criticality Level", workshop_type: "Workshop Type",
+  region: "Region",
 }
 
 const CAT: Record<string, { color: string; light: string; border: string; glass: string }> = {
@@ -101,7 +110,7 @@ function MultiSelect({ dim, values, options, color, glass, onChange }: {
     <div ref={ref} style={{ position: "relative" }}>
       <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
         style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 8, border: `1px solid ${active ? color + "60" : "#E5E7EB"}`, background: active ? `linear-gradient(145deg, ${glass}, ${color}18)` : "linear-gradient(145deg, #FFFFFF, #F8FAFC)", color: active ? color : "#6B7280", fontSize: 11, fontWeight: 500, cursor: "pointer", boxShadow: active ? `0 2px 8px ${color}20` : "0 1px 3px rgba(0,0,0,0.05)", whiteSpace: "nowrap", transition: "all 0.15s" }}>
-        <span style={{ textTransform: "capitalize" }}>{dim.replace(/_/g, " ")}</span>
+        <span style={{ textTransform: "capitalize" }}>{(FILTER_LABELS as any)[dim] || dim.replace(/_/g, " ")}</span>
         <span style={{ opacity: 0.4, fontSize: 9 }}>▸</span>
         <span style={{ opacity: active ? 1 : 0.6 }}>{label}</span>
         <ChevronDown size={9} style={{ opacity: 0.4 }} />
@@ -376,7 +385,8 @@ export default function ChartCard({ card }: Props) {
         const FILTER_COLORS: Record<string, string> = {
           brand: "#2563EB", year: "#0891B2", quarter: "#7C3AED",
           fleet_segment: "#059669", maintenance_type: "#D97706",
-          criticality_level: "#DC2626", workshop_state: "#0891B2",
+          criticality_level: "#DC2626", workshop_type: "#0891B2",
+          region: "#0891B2",
         }
         return (
           <div style={{ padding: "5px 12px 5px", display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", borderBottom: "1px solid #F1F5F9", background: "#FAFBFC" }}>
