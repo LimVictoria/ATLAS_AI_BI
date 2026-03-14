@@ -10,17 +10,16 @@ router = APIRouter(prefix="/filters", tags=["filters"])
 # ── Filter dimensions (moved from metrics.py) ─────────────────────────────────
 
 FILTER_DIMENSIONS = {
-    "brand":              {"label": "Brand",              "column": "brand",              "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT brand FROM v_maintenance_full ORDER BY brand"},
-    "year":               {"label": "Year",               "column": "year",               "type": "select",    "cast": "int", "options_sql": "SELECT DISTINCT year FROM v_maintenance_full ORDER BY year"},
-    "month":              {"label": "Month",              "column": "month_name",         "type": "select",    "cast": None,  "options": ["January","February","March","April","May","June","July","August","September","October","November","December"]},
-    "quarter":            {"label": "Quarter",            "column": "year_quarter",       "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT year_quarter FROM v_maintenance_full ORDER BY year_quarter"},
-    "fleet_segment":      {"label": "Fleet Segment",      "column": "fleet_segment",      "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT fleet_segment FROM v_maintenance_full ORDER BY fleet_segment"},
-    "component_category": {"label": "Component Category", "column": "component_category", "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT component_category FROM v_maintenance_full ORDER BY component_category"},
-    "maintenance_type":   {"label": "Maintenance Type",   "column": "maintenance_type",   "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT maintenance_type FROM v_maintenance_full ORDER BY maintenance_type"},
-    "criticality_level":  {"label": "Criticality",        "column": "criticality_level",  "type": "select",    "cast": None,  "options": ["Critical","High","Medium","Low"]},
-    "workshop_type":      {"label": "Workshop Type",      "column": "workshop_type",      "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT workshop_type FROM v_maintenance_full ORDER BY workshop_type"},
-    "workshop_state":     {"label": "Workshop State",     "column": "workshop_type",      "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT workshop_type FROM v_maintenance_full ORDER BY workshop_type"},
-    "region":             {"label": "Region",             "column": "region",             "type": "select",    "cast": None,  "options_sql": "SELECT DISTINCT region FROM v_maintenance_full ORDER BY region"},
+    "brand":              {"label": "Brand",              "column": "brand",              "type": "select", "cast": None,  "options_sql": "SELECT DISTINCT brand FROM v_maintenance_full ORDER BY brand"},
+    "year":               {"label": "Year",               "column": "year",               "type": "select", "cast": "int", "options_sql": "SELECT DISTINCT year FROM v_maintenance_full ORDER BY year"},
+    "quarter":            {"label": "Quarter",            "column": "month",              "type": "select", "cast": "int", "quarter": True,
+                           "options": ["1","2","3","4"]},
+    "fleet_segment":      {"label": "Fleet Segment",      "column": "fleet_segment",      "type": "select", "cast": None,  "options_sql": "SELECT DISTINCT fleet_segment FROM v_maintenance_full ORDER BY fleet_segment"},
+    "maintenance_type":   {"label": "Maintenance Type",   "column": "maintenance_type",   "type": "select", "cast": None,  "options_sql": "SELECT DISTINCT maintenance_type FROM v_maintenance_full ORDER BY maintenance_type"},
+    "criticality_level":  {"label": "Criticality Level",  "column": "criticality_level",  "type": "select", "cast": None,  "options": ["Critical","High","Medium","Low"]},
+    "workshop_type":      {"label": "Workshop Type",      "column": "workshop_type",      "type": "select", "cast": None,  "options_sql": "SELECT DISTINCT workshop_type FROM v_maintenance_full ORDER BY workshop_type"},
+    "region":             {"label": "Region",             "column": "region",             "type": "select", "cast": None,  "options_sql": "SELECT DISTINCT region FROM v_maintenance_full ORDER BY region"},
+    "component_category": {"label": "Component",          "column": "component_category", "type": "select", "cast": None,  "options_sql": "SELECT DISTINCT component_category FROM v_maintenance_full ORDER BY component_category"},
 }
 
 TIME_SHORTCUTS = {
@@ -33,40 +32,57 @@ TIME_SHORTCUTS = {
 }
 
 
+QUARTER_MONTHS = {
+    "1": [1,2,3], "2": [4,5,6], "3": [7,8,9], "4": [10,11,12]
+}
+
 def build_where_from_filters(filters: dict) -> str:
     """Build a SQL WHERE clause from a filters dict."""
     if not filters:
         return ""
     clauses = []
     for dim, value in filters.items():
-        if not value:
+        if value is None or value == "" or value == []:
             continue
         if dim == "time_shortcut" and value in TIME_SHORTCUTS:
             clauses.append(TIME_SHORTCUTS[value]["sql_filter"])
             continue
         cfg = FILTER_DIMENSIONS.get(dim)
         if not cfg:
-            clauses.append(f"{dim} = '{value}'")
+            # Unknown dim — pass through as direct column filter
+            if isinstance(value, list):
+                vals = ", ".join(f"'{v}'" for v in value)
+                clauses.append(f"{dim} IN ({vals})")
+            else:
+                clauses.append(f"{dim} = '{value}'")
             continue
-        col  = cfg["column"]
+
         cast = cfg.get("cast")
+        is_quarter = cfg.get("quarter", False)
 
         def fmt(v):
-            # Cast to integer if needed (e.g. year), otherwise quote as string
             if cast == "int":
-                try:
-                    return str(int(v))
-                except (ValueError, TypeError):
-                    return f"'{v}'"
+                try: return str(int(v))
+                except: return f"'{v}'"
             return f"'{v}'"
 
-        if isinstance(value, list) and len(value) == 2 and cfg["type"] == "daterange":
-            clauses.append(f"{col} BETWEEN '{value[0]}' AND '{value[1]}'")
+        values_list = value if isinstance(value, list) else [value]
+
+        if is_quarter:
+            # Convert quarter numbers to month ranges
+            months = []
+            for q in values_list:
+                months.extend(QUARTER_MONTHS.get(str(q), []))
+            if months:
+                clauses.append(f"month IN ({', '.join(str(m) for m in sorted(set(months)))})")
+        elif cfg["type"] == "daterange" and isinstance(value, list) and len(value) == 2:
+            clauses.append(f"{cfg['column']} BETWEEN '{value[0]}' AND '{value[1]}'")
         elif isinstance(value, list):
             vals = ", ".join(fmt(v) for v in value)
-            clauses.append(f"{col} IN ({vals})")
+            clauses.append(f"{cfg['column']} IN ({vals})")
         else:
-            clauses.append(f"{col} = {fmt(value)}")
+            clauses.append(f"{cfg['column']} = {fmt(value)}")
+
     return "WHERE " + " AND ".join(clauses) if clauses else ""
 
 
