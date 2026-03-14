@@ -88,6 +88,7 @@ class ChatRequest(BaseModel):
 
 class BoardStateRequest(BaseModel):
     board_state: list
+    user_id: Optional[str] = "default"
 
 
 # ── Chat endpoint ──────────────────────────────────────────────────────────────
@@ -158,12 +159,15 @@ def clear_history(session_id: str):
     return {"message": "History cleared"}
 
 @router.get("/board")
-def get_board():
-    return {"board_state": load_board("default")}
+@router.get("/board/{user_id}")
+def get_board(user_id: str = "default"):
+    return {"board_state": load_board(user_id)}
 
 @router.post("/board")
+@router.post("/board/save")
 def post_board(req: BoardStateRequest):
-    ok = save_board("default", req.board_state)
+    user_id = getattr(req, "user_id", "default") or "default"
+    ok = save_board(user_id, req.board_state)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to save board")
     return {"message": "Board saved"}
