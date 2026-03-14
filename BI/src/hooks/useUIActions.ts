@@ -25,6 +25,7 @@ export async function processUIActions(actions: any[]) {
         filters: action.filters || {},
         available_charts: raw.available_charts || ["bar", "line", "table"],
         sql: raw.sql || action.sql || "",
+        base_sql: raw.sql || action.sql || "",  // store original for filter resets
         selected: false,
         loading: false,
         x: 0, y: 0, w: 6, h: 6,
@@ -55,13 +56,9 @@ export async function processUIActions(actions: any[]) {
               loading: false,
             })
           } else {
-            const { runMetric } = await import("@/utils/api")
-            const result = await runMetric(card.metric_id, action.chart_type, card.filters)
-            updateChart(cardId, {
-              chart_type: action.chart_type,
-              chart_data: result.chart,
-              loading: false,
-            })
+            // No SQL stored — card is from old session, cannot re-render
+            console.warn("[useUIActions] card has no sql, cannot switch chart type:", card.metric_id)
+            updateChart(cardId, { loading: false })
           }
         } catch {
           updateChart(cardId, { loading: false })
@@ -77,9 +74,8 @@ export async function processUIActions(actions: any[]) {
             const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
             updateChart(cardId, { chart_data: result.chart, filters: newFilters, loading: false })
           } else {
-            const { runMetric } = await import("@/utils/api")
-            const result = await runMetric(card.metric_id, card.chart_type, newFilters)
-            updateChart(cardId, { chart_data: result.chart, filters: newFilters, loading: false })
+            console.warn("[useUIActions] card has no sql, cannot apply filter:", card.metric_id)
+            updateChart(cardId, { loading: false })
           }
         } catch {
           updateChart(cardId, { loading: false })
