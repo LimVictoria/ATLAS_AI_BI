@@ -99,23 +99,50 @@ function GlassBtn({ onClick, active, activeColor, activeGlass, title, children }
   title?: string; children: React.ReactNode
 }) {
   const [hovered, setHovered] = useState(false)
+  const [showTip, setShowTip] = useState(false)
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const onEnter = () => {
+    setHovered(true)
+    tipTimer.current = setTimeout(() => setShowTip(true), 120)
+  }
+  const onLeave = () => {
+    setHovered(false)
+    setShowTip(false)
+    if (tipTimer.current) clearTimeout(tipTimer.current)
+  }
+
   return (
-    <button title={title}
-      onMouseDown={e => e.stopPropagation()}
-      onClick={e => { e.stopPropagation(); onClick(e) }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: 30, height: 30, borderRadius: 8,
-        border: active ? `1.5px solid ${activeColor}60` : `1px solid ${hovered ? "#D1D5DB" : "#E5E7EB"}`,
-        background: active ? `linear-gradient(145deg, ${activeGlass}, ${activeColor}25)` : hovered ? "linear-gradient(145deg, #F9FAFB, #F3F4F6)" : "linear-gradient(145deg, #FFFFFF, #F8FAFC)",
-        color: active ? activeColor : hovered ? "#374151" : "#9CA3AF",
-        cursor: "pointer",
-        boxShadow: active ? `0 2px 8px ${activeColor}30, inset 0 1px 0 rgba(255,255,255,0.4)` : hovered ? "0 2px 6px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)" : "0 1px 3px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.9)",
-        transition: "all 0.15s ease", backdropFilter: "blur(4px)", flexShrink: 0,
-      }}
-    >{children}</button>
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        onMouseDown={e => e.stopPropagation()}
+        onClick={e => { e.stopPropagation(); onClick(e) }}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 30, height: 30, borderRadius: 8,
+          border: active ? `1.5px solid ${activeColor}60` : `1px solid ${hovered ? "#D1D5DB" : "#E5E7EB"}`,
+          background: active ? `linear-gradient(145deg, ${activeGlass}, ${activeColor}25)` : hovered ? "linear-gradient(145deg, #F9FAFB, #F3F4F6)" : "linear-gradient(145deg, #FFFFFF, #F8FAFC)",
+          color: active ? activeColor : hovered ? "#374151" : "#9CA3AF",
+          cursor: "pointer",
+          boxShadow: active ? `0 2px 8px ${activeColor}30, inset 0 1px 0 rgba(255,255,255,0.4)` : hovered ? "0 2px 6px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)" : "0 1px 3px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.9)",
+          transition: "all 0.15s ease", backdropFilter: "blur(4px)",
+        }}
+      >{children}</button>
+      {title && showTip && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
+          transform: "translateX(-50%)",
+          background: "#1E293B", color: "#F8FAFC",
+          fontSize: 10, fontWeight: 500, padding: "3px 8px",
+          borderRadius: 5, whiteSpace: "nowrap", pointerEvents: "none",
+          zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+        }}>
+          {title}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -460,33 +487,6 @@ export default function ChartCard({ card }: Props) {
         )
       })()}
 
-      {/* ── AI filter suggestions ── */}
-      {!flipped && !hasActiveFilters && card.filter_suggestions && card.filter_suggestions.length > 0 && (
-        <div style={{
-          padding: "5px 12px 5px", display: "flex", flexWrap: "wrap", gap: 5,
-          alignItems: "center", borderBottom: "1px solid #F1F5F9", background: "#FAFBFC"
-        }}>
-          <span style={{ fontSize: 9.5, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.07em", marginRight: 2 }}>
-            TRY
-          </span>
-          {card.filter_suggestions.map((s, i) => (
-            <button key={i} onClick={() => applyCardFilter(s.dim, [s.value])}
-              style={{
-                fontSize: 10.5, fontWeight: 500, padding: "3px 10px",
-                borderRadius: 99, cursor: "pointer", transition: "all 0.12s",
-                border: `1px solid ${cat.color}40`,
-                color: cat.color,
-                background: `${cat.color}08`,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = `${cat.color}18` }}
-              onMouseLeave={e => { e.currentTarget.style.background = `${cat.color}08` }}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* ── Body ── */}
       {flipped ? (
         <CodeFace metricId={card.metric_id} sql={card.sql} baseSql={card.base_sql} color={cat.color} light={cat.light} />
@@ -501,7 +501,7 @@ export default function ChartCard({ card }: Props) {
             <Plot
               data={plotData.data}
               layout={{ ...(plotData.layout || {}), paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: "#334155", family: "Inter, system-ui, sans-serif", size: 11 }, margin: { t: 8, r: card.chart_type === "heatmap" ? 80 : 16, b: 44, l: 56 }, autosize: true, showlegend: needsLegend, title: undefined }}
-              config={{ responsive: true, displayModeBar: false }}
+              config={{ responsive: true, displayModeBar: false, scrollZoom: false, doubleClick: false, dragmode: false }}
               style={{ width: "100%", height: "100%" }}
               useResizeHandler={true}
             />
