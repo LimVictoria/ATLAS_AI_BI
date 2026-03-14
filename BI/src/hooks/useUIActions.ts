@@ -25,7 +25,8 @@ export async function processUIActions(actions: any[]) {
         filters: action.filters || {},
         available_charts: raw.available_charts || ["bar", "line", "table"],
         sql: raw.sql || action.sql || "",
-        base_sql: raw.sql || action.sql || "",  // store original for filter resets
+        base_sql: raw.sql || action.sql || "",
+        filter_suggestions: action.filter_suggestions || [],
         selected: false,
         loading: false,
         x: 0, y: 0, w: 6, h: 6,
