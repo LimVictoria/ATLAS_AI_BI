@@ -51,9 +51,11 @@ fig.show()`,
   },
 }
 
-const FALLBACK_SQL = (metricId: string) => ({
-  sql: `-- Metric: ${metricId}\nSELECT * FROM v_maintenance_full LIMIT 100`,
-  python: `# Metric: ${metricId}\nimport pandas as pd\ndf = run_query("SELECT * FROM v_maintenance_full LIMIT 100")\nprint(df.head())`,
+const FALLBACK_SQL = (metricId: string, cardSql?: string) => ({
+  sql: cardSql || `-- SQL not available for: ${metricId}\n-- Ask the AI to regenerate this chart to see its SQL`,
+  python: cardSql
+    ? `import plotly.express as px\nfrom db.duckdb_session import run_query\n\ndf = run_query("""\n${cardSql}\n""")\nprint(df.head())`
+    : `# Ask the AI to regenerate this chart to see its SQL`,
 })
 
 // ── Colourful SVG micro-icons ─────────────────────────────────────────────────
@@ -182,7 +184,7 @@ function CardFilterPanel({ filters, color, glass, onFilterChange }: {
 
 // ── Code back-face ────────────────────────────────────────────────────────────
 function CodeFace({ metricId, color, light }: { metricId: string; color: string; light: string }) {
-  const info = METRIC_SQL[metricId] ?? FALLBACK_SQL(metricId)
+  const info = METRIC_SQL[metricId] ?? FALLBACK_SQL(metricId, card.sql)
   const [tab, setTab] = useState<"sql" | "python">("sql")
   const [copied, setCopied] = useState(false)
   const code = tab === "sql" ? info.sql : info.python
