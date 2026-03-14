@@ -23,11 +23,17 @@ const SUGGESTIONS = [
 const MSG_ACCENTS = ["#3B82F6","#7C3AED","#059669","#D97706","#0891B2","#DC2626"]
 
 export default function AIPanel() {
-  const { sessionId, messages, addMessage, updateMessage, clearMessages, charts } = useDashboardStore()
+  const { sessionId, messages, addMessage, updateMessage, clearMessages, charts, loadBoardFromServer, loadMessagesFromServer } = useDashboardStore()
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load board and chat history on first mount
+  useEffect(() => {
+    loadBoardFromServer()
+    loadMessagesFromServer()
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
