@@ -222,6 +222,11 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Table ─────────────────────────────────────────────────────────────────
     elif chart_type == "table":
+        # Sort by first time column found, then by first numeric column
+        for tc in ["year_month","year_quarter","year","month_name","month","service_date"]:
+            if tc in df.columns:
+                df = _sort_time(df, tc)
+                break
         col_names = df.columns.tolist()
         header_vals = [f"<b>{c.replace('_', ' ').title()}</b>" for c in col_names]
         row_fill = ["#F8FAFC" if i % 2 == 0 else "#FFFFFF" for i in range(n)]
