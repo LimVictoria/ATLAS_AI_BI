@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from db.duckdb_session import run_query
-from metrics import METRICS, get_metric_sql
+# metrics.py removed — Path B uses dynamic SQL via nodes.py
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -406,57 +406,63 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
 
 class QueryRequest(BaseModel):
-    metric_id: str
+    sql: str
     chart_type: Optional[str] = None
-    filters: Optional[dict] = {}
+    title: str = "Query Result"
+    category: str = "General"
+    x_col: Optional[str] = None
+    y_col: Optional[str] = None
+    group_col: Optional[str] = None
 
-
-# Metrics that natively support stacked_bar (have group_col)
-STACKED_BAR_METRICS = {"cost_by_brand_and_component", "downtime_by_brand_and_component"}
 
 @router.post("/")
-def run_metric(req: QueryRequest):
-    # Safety remap: if stacked_bar requested on a non-stacked metric, swap to correct metric
-    metric_id = req.metric_id
-    if req.chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
-        metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
-
-    metric = METRICS.get(metric_id)
-    if not metric:
-        raise HTTPException(status_code=404, detail=f"Metric '{metric_id}' not found")
-
-    sql = get_metric_sql(metric_id, req.filters or {})
-    if not sql:
-        raise HTTPException(status_code=400, detail="Could not build SQL")
-
+def run_sql_query(req: QueryRequest):
+    """Execute arbitrary SQL and return a chart. Used by Path B agent."""
+    if not req.sql.strip().upper().startswith("SELECT"):
+        raise HTTPException(status_code=400, detail="Only SELECT queries allowed")
     try:
-        df = run_query(sql)
+        df = run_query(req.sql)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query error: {str(e)}")
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Query returned no rows")
 
-    chart_type = req.chart_type or metric["default_chart"]
-    available = metric.get("available_charts", ["bar"])
-    if chart_type not in available:
-        chart_type = metric["default_chart"]
+    from agent.nodes import _infer_meta, _smart_available_charts, _auto_chart_type
+    df       = _clean_df(df)
+    cols     = df.columns.tolist()
+    meta     = _infer_meta(cols)
+    meta["category"] = req.category
+    if req.x_col:
+        meta["x_col"] = req.x_col
+    if req.y_col:
+        meta["y_col"] = req.y_col
+    if req.group_col:
+        meta["group_col"] = req.group_col
 
-    chart_json = _build_chart(df, metric, chart_type)
+    chart_type = req.chart_type or _auto_chart_type(cols)
+    try:
+        chart_json = _build_chart(df, meta, chart_type)
+    except Exception:
+        chart_json = _build_chart(df, meta, "table")
+        chart_type = "table"
+
+    available = _smart_available_charts(cols, df, chart_type)
     return {
-        "metric_id":        metric_id,
-        "title":            metric["title"],
-        "category":         metric["category"],
-        "chart_type":       chart_type,
         "chart":            chart_json,
+        "chart_type":       chart_type,
+        "title":            req.title,
+        "category":         req.category,
+        "sql":              req.sql,
         "row_count":        len(df),
         "summary":          df.head(5).to_dict(orient="records"),
         "available_charts": available,
-        "sql":              sql,
     }
 
 
 @router.get("/metrics")
 def list_metrics():
-    from metrics import get_metrics_index
-    return {"metrics": get_metrics_index()}
+    """Legacy endpoint — returns empty list. metrics.py has been removed."""
+    return {"metrics": []}
 
 
 
