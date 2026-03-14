@@ -183,8 +183,8 @@ function CardFilterPanel({ filters, color, glass, onFilterChange }: {
 }
 
 // ── Code back-face ────────────────────────────────────────────────────────────
-function CodeFace({ metricId, color, light }: { metricId: string; color: string; light: string }) {
-  const info = METRIC_SQL[metricId] ?? FALLBACK_SQL(metricId, card.sql)
+function CodeFace({ metricId, sql, color, light }: { metricId: string; sql?: string; color: string; light: string }) {
+  const info = METRIC_SQL[metricId] ?? FALLBACK_SQL(metricId, sql)
   const [tab, setTab] = useState<"sql" | "python">("sql")
   const [copied, setCopied] = useState(false)
   const code = tab === "sql" ? info.sql : info.python
@@ -412,7 +412,7 @@ export default function ChartCard({ card }: Props) {
 
       {/* ── Body ── */}
       {flipped ? (
-        <CodeFace metricId={card.metric_id} color={cat.color} light={cat.light} />
+        <CodeFace metricId={card.metric_id} sql={card.sql} color={cat.color} light={cat.light} />
       ) : (
         <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {card.loading ? (
