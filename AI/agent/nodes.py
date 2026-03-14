@@ -470,7 +470,7 @@ async def board_node(state: AgentState) -> AgentState:
             if "data_preview" in line and card_sql == "":
                 pass  # data preview only, not full SQL
 
-        # Ask LLM: is this a chart type change, or a SQL modification?
+        # Ask LLM: what kind of modification does the user want?
         system = f"""You are ATLAS. A card is selected on the BI board.
 SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}
 
@@ -478,13 +478,24 @@ SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}
 
 {SCHEMA_GUIDE}
 
-The user wants to modify this card. Determine what they want:
-1. If they want a DIFFERENT CHART TYPE (bar/line/pie/table etc) → return {{"action": "chart_type", "chart_type": "..."}}
-2. If they want to ADD/CHANGE DATA in the query (more columns, different grouping, pivot by year, etc) → 
-   Write a NEW SQL query that satisfies the request and return:
+The user wants to modify this card. Classify their request into exactly one of these:
+
+1. CHART TYPE CHANGE — user wants a different visualisation (bar, line, pie, table, heatmap etc)
+   → return {{"action": "chart_type", "chart_type": "..."}}
+
+2. FILTER UI — user wants to add/show a filter dropdown on the card (e.g. "add a month filter",
+   "add a brand filter", "I want to filter by year"). Do NOT hardcode a value — just expose the filter.
+   → return {{"action": "filter_ui", "dim": "month"}}
+   Valid dims: brand, year, month, quarter, fleet_segment, maintenance_type, criticality_level, workshop_type, region, component_category
+
+3. SQL DATA CHANGE — user wants different data (more columns, different grouping, pivot, aggregation)
+   → Write a NEW SQL query and return:
    {{"action": "sql", "sql": "SELECT ...", "chart_type": "table", "title": "..."}}
 
-Return ONLY valid JSON, no markdown."""
+4. UNCLEAR — if you are not sure what the user wants, ask for clarification
+   → return {{"action": "clarify", "question": "..."}}
+
+Return ONLY valid JSON, no markdown. Think carefully before choosing."""
 
         messages = [{"role": "system", "content": system}, {"role": "user", "content": state["user_message"]}]
         try:
@@ -492,10 +503,21 @@ Return ONLY valid JSON, no markdown."""
             parsed = _parse_json(raw)
 
             if parsed.get("action") == "chart_type":
-                # Simple chart type switch
                 ui_action = {"action": "modify_chart", "card_id": card_id, "chart_type": parsed["chart_type"]}
-                narrative = f"I've changed the chart to {parsed['chart_type']}."
+                narrative = f"Done — switched to {parsed['chart_type']} chart."
                 return {**state, "narrative": narrative, "ui_actions": [ui_action]}
+
+            elif parsed.get("action") == "filter_ui":
+                # User wants a filter dropdown added — emit show_filter action
+                dim = parsed.get("dim", "")
+                ui_action = {"action": "show_filter", "card_id": card_id, "dim": dim}
+                narrative = f"I've opened the {dim.replace('_', ' ')} filter on this card — select the values you want."
+                return {**state, "narrative": narrative, "ui_actions": [ui_action]}
+
+            elif parsed.get("action") == "clarify":
+                # LLM isn't sure — ask the user
+                question = parsed.get("question", "Could you clarify what you'd like to change?")
+                return {**state, "narrative": question, "ui_actions": []}
 
             elif parsed.get("action") == "sql":
                 # Re-run with new SQL → adds a NEW card alongside the original
@@ -508,7 +530,7 @@ Return ONLY valid JSON, no markdown."""
                     "chart_title": new_title, "chart_category": "Cost",
                     "sql_error": "", "sql_retries": 0,
                     "narrative": f"I've added a new card '{new_title}' alongside the original. You can remove it if it's not what you wanted.",
-                    "intent": "visualise"  # re-routes to chart_node → respond_node → add_chart
+                    "intent": "visualise"
                 }
         except Exception as e:
             print(f"[board_node] modify error: {e}")
