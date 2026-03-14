@@ -29,10 +29,9 @@ COLUMNS (exact names — do NOT invent column names):
   fleet_segment      TEXT    — Heavy, Medium, Light
   year_manufactured  INTEGER
   truck_age_years    INTEGER
-  service_date       DATE
-  year               INTEGER — extracted from service_date
-  month              INTEGER — 1-12
-  year_month         TEXT    — e.g. "2024-03"
+  year               INTEGER — calendar year (2020-2024). Use this directly, NOT strftime()
+  month              INTEGER — month number 1-12. Use this directly, NOT strftime()
+  year_month         TEXT    — e.g. "2024-03". Use for time series x-axis
   month_name         TEXT    — e.g. "March"
   year_quarter       TEXT    — e.g. "2024-Q1"
   maintenance_type   TEXT    — Scheduled, Unscheduled
@@ -51,14 +50,27 @@ COLUMNS (exact names — do NOT invent column names):
 
 DATE RANGE: 2020-2024. "This month"=Dec 2024. "This year"=2024. "Last year"=2023.
 
-SQL RULES:
-- Use strftime(service_date,'%Y') for year, strftime(service_date,'%m') for month
+CRITICAL SQL RULES:
+- NEVER use strftime() or service_date — the view already has year, month, year_month pre-extracted
+- Use year and month columns directly: WHERE year = 2023, WHERE month IN (1,2,3)
+- For year pivots: ROUND(SUM(CASE WHEN year = 2020 THEN total_cost_myr END), 2) AS cost_2020
 - Use ROUND(value,2) for monetary values
 - Use NULLIF(denominator,0) to avoid division by zero
 - GROUP BY all non-aggregated SELECT columns
-- Time series: ORDER BY time column ASC
-- Category: ORDER BY measure DESC
+- Time series: ORDER BY year_month ASC
+- Category comparisons: ORDER BY main measure DESC
 - No LIMIT unless user asks for top-N
+- ALWAYS include fleet_segment, brand or other filter columns in WHERE if they are active filters
+
+YEAR PIVOT EXAMPLE (for "show cost by brand with columns per year"):
+SELECT brand,
+       ROUND(SUM(CASE WHEN year = 2020 THEN total_cost_myr ELSE 0 END), 2) AS cost_2020,
+       ROUND(SUM(CASE WHEN year = 2021 THEN total_cost_myr ELSE 0 END), 2) AS cost_2021,
+       ROUND(SUM(CASE WHEN year = 2022 THEN total_cost_myr ELSE 0 END), 2) AS cost_2022,
+       ROUND(SUM(CASE WHEN year = 2023 THEN total_cost_myr ELSE 0 END), 2) AS cost_2023
+FROM v_maintenance_full
+GROUP BY brand
+ORDER BY (cost_2020 + cost_2021 + cost_2022 + cost_2023) DESC
 """
 
 TIME_COLS   = {"year_month","month_name","year_quarter","service_date","year","month"}
@@ -230,13 +242,22 @@ def _parse_json(raw: str) -> dict:
 
 async def intent_node(state: AgentState) -> AgentState:
     """Classify user intent and route accordingly."""
-    msg = state["user_message"].lower()
+    msg   = state["user_message"].lower()
     board = state.get("board_context", "")
 
-    # Fast rule-based classification (no LLM needed)
-    explain_words  = {"why","explain","reason","cause","because","how come","what makes"}
-    board_words    = {"how many charts","what charts","list my charts","what's on","what is on"}
-    modify_words   = {"change","switch","modify","convert","make it","turn into"}
+    # Check if a card is selected
+    has_selected = "SELECTED CARD:" in board and "none" not in board.split("SELECTED CARD:")[-1][:20]
+    selected_card_id = None
+    if has_selected:
+        m = re.search(r"id=([a-f0-9\-]+)", board.split("SELECTED CARD:")[-1])
+        if m:
+            selected_card_id = m.group(1)
+
+    explain_words = {"why","explain","reason","cause","because","how come","what makes"}
+    board_words   = {"how many charts","what charts","list my charts","what's on","what is on"}
+    modify_words  = {"change","switch","modify","convert","make it","turn into","update","add column",
+                     "add columns","another column","more columns","include","can we have","can you add",
+                     "pivot","breakdown","split by","group by year","per year","by year"}
 
     intent = "visualise"  # default
 
@@ -244,17 +265,14 @@ async def intent_node(state: AgentState) -> AgentState:
         intent = "explain"
     elif any(w in msg for w in board_words):
         intent = "board"
-    elif any(w in msg for w in modify_words) and "SELECTED CARD:" in board and "none" not in board.split("SELECTED CARD:")[-1][:20]:
+    elif has_selected and any(w in msg for w in modify_words):
+        # Card is selected + user wants to change/extend it → modify
+        intent = "modify"
+    elif has_selected and intent == "visualise":
+        # Card selected + data question → extend the selected card's query
         intent = "modify"
 
-    # Extract selected card id if modifying
-    selected_card_id = None
-    if intent == "modify" and "SELECTED CARD:" in board:
-        m = re.search(r"id=([a-f0-9\-]+)", board.split("SELECTED CARD:")[-1])
-        if m:
-            selected_card_id = m.group(1)
-
-    print(f"[intent_node] intent={intent!r} selected_card={selected_card_id!r}")
+    print(f"[intent_node] intent={intent!r} selected_card={selected_card_id!r} has_selected={has_selected}")
     return {**state, "intent": intent, "selected_card_id": selected_card_id}
 
 
@@ -418,9 +436,8 @@ Do NOT suggest adding a chart. Do NOT print a markdown table.
 # ── Node 6: board_node ─────────────────────────────────────────────────────────
 
 async def board_node(state: AgentState) -> AgentState:
-    """Answer board-level questions or emit modify_chart actions."""
-    msg   = state["user_message"].lower()
-    board = state.get("board_context", "")
+    """Handle board queries and selected-card modifications."""
+    board  = state.get("board_context", "")
     intent = state.get("intent", "board")
 
     if intent == "modify":
@@ -428,24 +445,67 @@ async def board_node(state: AgentState) -> AgentState:
         if not card_id:
             return {**state, "narrative": "Please select a card first by clicking on it, then ask me to change it.", "ui_actions": []}
 
-        # Ask LLM what to change
-        system = f"""Given this selected card on the ATLAS BI board, determine what modification the user wants.
+        # Extract selected card's SQL and current chart type from board context
+        card_sql = ""
+        card_chart_type = "table"
+        card_title = "Query Result"
+        for line in board.split("\n"):
+            if f"id={card_id}" in line:
+                ct_match = re.search(r"chart_type=(\w+)", line)
+                if ct_match:
+                    card_chart_type = ct_match.group(1)
+                title_match = re.search(r"title='([^']+)'", line)
+                if title_match:
+                    card_title = title_match.group(1)
+            if "data_preview" in line and card_sql == "":
+                pass  # data preview only, not full SQL
+
+        # Ask LLM: is this a chart type change, or a SQL modification?
+        system = f"""You are ATLAS. A card is selected on the BI board.
+SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}
+
 {board}
-Return ONLY JSON: {{"chart_type": "bar", "filters": {{}}}}
-Only include keys the user actually wants to change."""
+
+{SCHEMA_GUIDE}
+
+The user wants to modify this card. Determine what they want:
+1. If they want a DIFFERENT CHART TYPE (bar/line/pie/table etc) → return {{"action": "chart_type", "chart_type": "..."}}
+2. If they want to ADD/CHANGE DATA in the query (more columns, different grouping, pivot by year, etc) → 
+   Write a NEW SQL query that satisfies the request and return:
+   {{"action": "sql", "sql": "SELECT ...", "chart_type": "table", "title": "..."}}
+
+Return ONLY valid JSON, no markdown."""
+
         messages = [{"role": "system", "content": system}, {"role": "user", "content": state["user_message"]}]
         try:
-            raw    = await _groq(messages, max_tokens=200)
+            raw    = await _groq(messages, max_tokens=600)
             parsed = _parse_json(raw)
-            action = {"action": "modify_chart", "card_id": card_id, **parsed}
-            narrative = f"Done — I've updated the selected chart."
+
+            if parsed.get("action") == "chart_type":
+                # Simple chart type switch
+                ui_action = {"action": "modify_chart", "card_id": card_id, "chart_type": parsed["chart_type"]}
+                narrative = f"I've changed the chart to {parsed['chart_type']}."
+                return {**state, "narrative": narrative, "ui_actions": [ui_action]}
+
+            elif parsed.get("action") == "sql":
+                # Re-run with new SQL → adds a NEW card alongside the original
+                new_sql   = parsed.get("sql", "")
+                new_type  = parsed.get("chart_type", "table")
+                new_title = parsed.get("title", f"{card_title} (modified)")
+                print(f"[board_node] SQL modification → new card: {new_title!r}")
+                return {**state,
+                    "sql": new_sql, "chart_type": new_type,
+                    "chart_title": new_title, "chart_category": "Cost",
+                    "sql_error": "", "sql_retries": 0,
+                    "narrative": f"I've added a new card '{new_title}' alongside the original. You can remove it if it's not what you wanted.",
+                    "intent": "visualise"  # re-routes to chart_node → respond_node → add_chart
+                }
         except Exception as e:
-            action    = {"action": "modify_chart", "card_id": card_id}
-            narrative = "I've applied the change to the selected card."
+            print(f"[board_node] modify error: {e}")
 
-        return {**state, "narrative": narrative, "ui_actions": [action]}
+        return {**state, "narrative": "I couldn't apply that change. Try rephrasing.", "ui_actions": []}
 
-    # Board query — answer from context
+    # Plain board query
     system = f"""You are ATLAS. Answer questions about the current BI board state.
 {board}
 Be concise. 1-2 sentences."""
@@ -490,12 +550,45 @@ Chart: {state.get("chart_title","")} ({state.get("chart_type","")})"""
         except Exception:
             narrative = f"Here is the {state.get('chart_title','data')} chart."
 
+    # Generate AI filter suggestions based on data
+    filter_suggestions = []
+    try:
+        preview = state.get("df_rows", [])[:5]
+        cols    = state.get("df_columns", [])
+        if preview and cols:
+            sugg_system = f"""You are ATLAS. Given this data preview, suggest 2-3 useful filter chips.
+Each chip should be a specific filter value the user might want to apply.
+Only suggest filters that make sense for the data shown.
+
+Data columns: {cols}
+Data preview: {json.dumps(preview[:3])}
+
+Return ONLY a JSON array of objects:
+[{{"dim": "brand", "value": "Scania", "label": "Scania only"}}, ...]
+
+Rules:
+- dim must be one of: brand, year, quarter, fleet_segment, maintenance_type, criticality_level, workshop_type, region, component_category
+- value must be an actual value visible in the data preview
+- label is short and human-friendly (max 4 words)
+- Return [] if no useful suggestions
+- Max 3 suggestions"""
+            sugg_messages = [{"role": "system", "content": sugg_system},
+                             {"role": "user", "content": "Suggest filters"}]
+            sugg_raw = await _groq(sugg_messages, max_tokens=200)
+            filter_suggestions = _parse_json(sugg_raw) if sugg_raw.strip().startswith("[") else []
+            if not isinstance(filter_suggestions, list):
+                filter_suggestions = []
+    except Exception as e:
+        print(f"[respond_node] filter suggestions failed: {e}")
+        filter_suggestions = []
+
     ui_actions = [{
-        "action":           "add_chart",
-        "metric_id":        state.get("chart_title","").lower().replace(" ","_"),
-        "title":            state.get("chart_title","Query Result"),
-        "chart_type":       state.get("chart_type","bar"),
-        "category":         state.get("chart_category","General"),
+        "action":            "add_chart",
+        "metric_id":         state.get("chart_title","").lower().replace(" ","_"),
+        "title":             state.get("chart_title","Query Result"),
+        "chart_type":        state.get("chart_type","bar"),
+        "category":          state.get("chart_category","General"),
+        "filter_suggestions": filter_suggestions,
         "chart_data": {
             "chart":            state.get("chart_json"),
             "chart_type":       state.get("chart_type","bar"),
@@ -531,6 +624,13 @@ def route_intent(state: AgentState) -> str:
         return "board_node"
     else:
         return "sql_node"
+
+
+def route_after_board(state: AgentState) -> str:
+    """After board_node: if re-routed to visualise (SQL mod), go to chart_node."""
+    if state.get("intent") == "visualise" and state.get("sql"):
+        return "chart_node"
+    return "memory_node"
 
 
 def route_after_sql(state: AgentState) -> str:
@@ -586,7 +686,10 @@ def build_graph():
     })
 
     g.add_edge("narrator_node", "memory_node")
-    g.add_edge("board_node",    "memory_node")
+    g.add_conditional_edges("board_node", route_after_board, {
+        "chart_node":  "chart_node",
+        "memory_node": "memory_node",
+    })
     g.add_edge("respond_node",  "memory_node")
     g.add_edge("memory_node",   END)
 
