@@ -169,10 +169,29 @@ class RerenderRequest(BaseModel):
 
 @router.post("/rerender")
 def rerender_chart(req: RerenderRequest):
-    """Re-render an existing card with a different chart type using its stored SQL."""
+    """Re-render a card with a different chart type and/or filters using stored SQL."""
     from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
+    from api.filters import build_where_from_filters
+
+    # Inject filters into SQL by replacing or appending WHERE clause
+    sql = req.sql
+    if req.filters:
+        where = build_where_from_filters(req.filters)
+        # Strip existing WHERE clause from stored SQL then add new one
+        import re
+        sql_no_where = re.sub(r"(?i)WHERE.*?(?=GROUP BY|ORDER BY|HAVING|LIMIT|$)",
+                              " ", sql, flags=re.DOTALL).strip()
+        # Re-append WHERE before GROUP BY / ORDER BY
+        for kw in ["GROUP BY", "ORDER BY", "HAVING", "LIMIT"]:
+            if kw in sql_no_where.upper():
+                idx = sql_no_where.upper().index(kw)
+                sql = sql_no_where[:idx].rstrip() + " " + where + " " + sql_no_where[idx:]
+                break
+        else:
+            sql = sql_no_where + " " + where
+
     try:
-        df = run_query(req.sql)
+        df = run_query(sql)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SQL error: {e}")
     if df.empty:
@@ -192,5 +211,5 @@ def rerender_chart(req: RerenderRequest):
         "chart_type":       req.chart_type,
         "available_charts": available,
         "row_count":        len(df),
-        "sql":              req.sql,
+        "sql":              sql,   # return filtered SQL so flip panel shows it
     }
