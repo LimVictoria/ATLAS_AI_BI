@@ -2,8 +2,9 @@
 ATLAS BI — FastAPI Backend
 """
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 from api.query import router as query_router
@@ -14,13 +15,32 @@ load_dotenv()
 
 app = FastAPI(title="ATLAS BI API", version="2.0.0")
 
+# ── CORS ──────────────────────────────────────────────────────────────────────
+# Allow all origins robustly — works even when the app throws an unhandled error
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Fallback: ensure CORS headers are present on ALL responses including 500s
+@app.middleware("http")
+async def add_cors_fallback(request: Request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal server error: {str(e)}"}
+        )
+    origin = request.headers.get("origin", "*")
+    response.headers["Access-Control-Allow-Origin"] = origin or "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 app.include_router(query_router)
 app.include_router(filters_router)
