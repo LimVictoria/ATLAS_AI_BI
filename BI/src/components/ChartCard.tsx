@@ -31,15 +31,48 @@ const CHART_ICONS: Record<string, React.ReactNode> = {
   histogram: <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="9" width="1.8" height="3" rx="0.5" fill="#F59E0B" opacity="0.6"/><rect x="3.2" y="6" width="1.8" height="6" rx="0.5" fill="#F59E0B" opacity="0.75"/><rect x="5.4" y="3" width="1.8" height="9" rx="0.5" fill="#F59E0B"/><rect x="7.6" y="5" width="1.8" height="7" rx="0.5" fill="#F59E0B" opacity="0.75"/><rect x="9.8" y="8" width="1.8" height="4" rx="0.5" fill="#F59E0B" opacity="0.5"/></svg>,
 }
 
-const FILTER_OPTIONS: Record<string, string[]> = {
-  brand: ["Scania", "Volvo", "Mercedes-Benz", "MAN", "Hino"],
-  year: ["2020", "2021", "2022", "2023", "2024"],
-  quarter: ["1", "2", "3", "4"],            // Q1-Q4, converted to months on backend
-  fleet_segment: ["Heavy", "Medium", "Light"],
-  maintenance_type: ["Scheduled", "Unscheduled"],
+// ── Dynamic filter options — fetched from backend, reflects actual data ──────────
+
+// Fixed enumerations that never change regardless of data
+const FIXED_OPTIONS: Record<string, string[]> = {
+  quarter:           ["1", "2", "3", "4"],
   criticality_level: ["Critical", "High", "Medium", "Low"],
-  workshop_type: ["Authorised", "Independent"],  // real column values
-  region: ["Central", "Northern", "Southern", "Eastern", "Sabah", "Sarawak"],
+  maintenance_type:  ["Scheduled", "Unscheduled"],
+}
+
+// Singleton cache — fetched once per session
+let _filterCache: Record<string, string[]> | null = null
+let _filterFetchPromise: Promise<void> | null = null
+
+async function loadFilterOptions(): Promise<Record<string, string[]>> {
+  if (_filterCache) return _filterCache
+  if (_filterFetchPromise) { await _filterFetchPromise; return _filterCache! }
+  _filterFetchPromise = (async () => {
+    try {
+      const { getFilters } = await import("@/utils/api")
+      const data = await getFilters()
+      const result: Record<string, string[]> = { ...FIXED_OPTIONS }
+      Object.entries(data.filters || {}).forEach(([key, cfg]: [string, any]) => {
+        if (!FIXED_OPTIONS[key] && cfg.options?.length > 0) {
+          result[key] = cfg.options
+        }
+      })
+      _filterCache = result
+    } catch {
+      // Fallback to sensible defaults if fetch fails
+      _filterCache = {
+        ...FIXED_OPTIONS,
+        brand:            ["Scania", "Volvo", "Mercedes-Benz", "MAN", "Hino"],
+        year:             ["2020", "2021", "2022", "2023", "2024"],
+        fleet_segment:    ["Heavy", "Medium", "Light"],
+        workshop_type:    ["Authorised", "Independent"],
+        region:           [],
+        component_category: [],
+      }
+    }
+  })()
+  await _filterFetchPromise
+  return _filterCache!
 }
 
 // Filter display labels
@@ -47,7 +80,7 @@ const FILTER_LABELS: Record<string, string> = {
   brand: "Brand", year: "Year", quarter: "Quarter",
   fleet_segment: "Fleet Segment", maintenance_type: "Maintenance Type",
   criticality_level: "Criticality Level", workshop_type: "Workshop Type",
-  region: "Region",
+  region: "Region", component_category: "Component",
 }
 
 const CAT: Record<string, { color: string; light: string; border: string; glass: string }> = {
@@ -135,13 +168,19 @@ function CardFilterPanel({ filters, color, glass, onFilterChange }: {
   filters: Record<string, any>; color: string; glass: string
   onFilterChange: (key: string, vals: string[]) => void
 }) {
+  const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>(FIXED_OPTIONS)
+
+  useEffect(() => {
+    loadFilterOptions().then(setFilterOptions)
+  }, [])
+
   return (
     <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid #F1F5F9", background: "linear-gradient(to bottom, #FAFBFC, #F5F7FA)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
       <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.06em", marginRight: 2 }}>FILTER</span>
-      {Object.keys(FILTER_OPTIONS).map(dim => (
+      {Object.keys(filterOptions).filter(dim => filterOptions[dim].length > 0).map(dim => (
         <MultiSelect key={dim} dim={dim}
           values={Array.isArray(filters[dim]) ? filters[dim] : filters[dim] ? [filters[dim]] : []}
-          options={FILTER_OPTIONS[dim]} color={color} glass={glass}
+          options={filterOptions[dim]} color={color} glass={glass}
           onChange={vals => onFilterChange(dim, vals)} />
       ))}
     </div>
@@ -230,13 +269,20 @@ export default function ChartCard({ card }: Props) {
     else newFilters[key] = vals.length === 1 ? vals[0] : vals
     updateChart(card.id, { loading: true, filters: newFilters })
     try {
-      const sourceSql = card.base_sql || card.sql  // always filter from original SQL
+      // Always use base_sql (original without filters) as the source
+      // If base_sql missing, strip WHERE from card.sql to recover the base
+      let sourceSql = card.base_sql || ""
+      if (!sourceSql && card.sql) {
+        // Strip existing WHERE clause to get clean base SQL
+        sourceSql = card.sql.replace(/\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s*$)/is, " ").trim()
+      }
       if (sourceSql) {
         const { rerenderChart } = await import("@/utils/api")
         const result = await rerenderChart(sourceSql, card.chart_type, card.title, card.category, newFilters)
         updateChart(card.id, {
           chart_data: result.chart,
           sql: result.sql || sourceSql,
+          base_sql: card.base_sql || sourceSql,  // preserve base_sql
           filters: newFilters,
           loading: false,
         })
@@ -256,12 +302,17 @@ export default function ChartCard({ card }: Props) {
     updateChart(card.id, { loading: true })
     try {
       const { rerenderChart } = await import("@/utils/api")
-      const sourceSql = card.base_sql || card.sql
-      const result = await rerenderChart(sourceSql, type, card.title, card.category, card.filters || {})
+      // Use base_sql so switching chart type preserves active filters correctly
+      let sourceSql = card.base_sql || ""
+      if (!sourceSql && card.sql) {
+        sourceSql = card.sql.replace(/\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s*$)/is, " ").trim()
+      }
+      const result = await rerenderChart(sourceSql || card.sql, type, card.title, card.category, card.filters || {})
       updateChart(card.id, {
         chart_type: type as ChartType,
         chart_data: result.chart,
         sql: result.sql || card.sql,
+        base_sql: card.base_sql || sourceSql,
         available_charts: result.available_charts || card.available_charts,
         loading: false,
       })
