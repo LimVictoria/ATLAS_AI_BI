@@ -5,7 +5,7 @@ import {
   SlidersHorizontal, ChevronDown, Code2, RotateCcw
 } from "lucide-react"
 import { useDashboardStore, ChartCard as ChartCardType, ChartType } from "@/store/dashboard"
-import { runMetric } from "@/utils/api"
+// runMetric removed — ChartCard now uses rerenderChart via card.sql
 import { v4 as uuid } from "uuid"
 import { useState, useRef, useEffect } from "react"
 
@@ -256,17 +256,34 @@ export default function ChartCard({ card }: Props) {
     else newFilters[key] = vals.length === 1 ? vals[0] : vals
     updateChart(card.id, { loading: true, filters: newFilters })
     try {
-      const result = await runMetric(card.metric_id, card.chart_type, newFilters)
-      updateChart(card.id, { chart_data: result.chart, loading: false })
+      if (card.sql) {
+        const { rerenderChart } = await import("@/utils/api")
+        const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
+        updateChart(card.id, { chart_data: result.chart, filters: newFilters, loading: false })
+      } else {
+        // No SQL — just update filters display without re-fetching
+        updateChart(card.id, { filters: newFilters, loading: false })
+      }
     } catch { updateChart(card.id, { loading: false }) }
   }
 
   const switchChartType = async (type: string) => {
     if (type === card.chart_type) return
+    if (!card.sql) {
+      // Old card with no SQL — ask user to regenerate
+      alert("This chart was created in a previous session. Ask the AI to regenerate it, then you can switch chart types.")
+      return
+    }
     updateChart(card.id, { loading: true })
     try {
-      const result = await runMetric(card.metric_id, type, card.filters)
-      updateChart(card.id, { chart_type: type as ChartType, chart_data: result.chart, loading: false })
+      const { rerenderChart } = await import("@/utils/api")
+      const result = await rerenderChart(card.sql, type, card.title, card.category)
+      updateChart(card.id, {
+        chart_type: type as ChartType,
+        chart_data: result.chart,
+        available_charts: result.available_charts || card.available_charts,
+        loading: false,
+      })
     } catch { updateChart(card.id, { loading: false }) }
   }
 
