@@ -276,6 +276,88 @@ function CodeFace({ metricId, sql, baseSql, color, light }: { metricId: string; 
   )
 }
 
+// ── Sortable React Table ─────────────────────────────────────────────────────
+type SortDir = "asc" | "desc" | null
+
+function SortableTable({ plotData, color }: { plotData: any; color: string }) {
+  const [sortCol, setSortCol] = useState<number | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>(null)
+
+  if (!plotData?.data?.[0]) return null
+  const tableTrace = plotData.data[0]
+  const headers: string[] = (tableTrace.header?.values || []).map((v: string) =>
+    v.replace(/<b>|<\/b>/g, "")
+  )
+  const rawCols: any[][] = tableTrace.cells?.values || []
+
+  // Transpose columns → rows
+  const nRows = rawCols[0]?.length || 0
+  let rows = Array.from({ length: nRows }, (_, i) => rawCols.map((col: any[]) => col[i]))
+
+  // Apply sort
+  if (sortCol !== null && sortDir !== null) {
+    rows = [...rows].sort((a, b) => {
+      const va = a[sortCol]; const vb = b[sortCol]
+      const na = typeof va === "number" ? va : parseFloat(String(va).replace(/,/g, ""))
+      const nb = typeof vb === "number" ? vb : parseFloat(String(vb).replace(/,/g, ""))
+      if (!isNaN(na) && !isNaN(nb)) return sortDir === "asc" ? na - nb : nb - na
+      const sa = String(va ?? "").toLowerCase(); const sb = String(vb ?? "").toLowerCase()
+      return sortDir === "asc" ? sa.localeCompare(sb) : sb.localeCompare(sa)
+    })
+  }
+
+  const handleSort = (colIdx: number) => {
+    if (sortCol !== colIdx) { setSortCol(colIdx); setSortDir("asc"); return }
+    if (sortDir === "asc")  { setSortDir("desc"); return }
+    if (sortDir === "desc") { setSortCol(null); setSortDir(null) }
+  }
+
+  const SortIcon = ({ idx }: { idx: number }) => {
+    if (sortCol !== idx) return <span style={{ opacity: 0.3, fontSize: 9, marginLeft: 4 }}>⇅</span>
+    if (sortDir === "asc")  return <span style={{ color, fontSize: 9, marginLeft: 4 }}>↑</span>
+    return <span style={{ color, fontSize: 9, marginLeft: 4 }}>↓</span>
+  }
+
+  return (
+    <div style={{ width: "100%", height: "100%", overflow: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: "Inter, sans-serif" }}>
+        <thead>
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} onClick={() => handleSort(i)}
+                style={{
+                  padding: "10px 12px", textAlign: "left", fontWeight: 600,
+                  background: "#1E293B", color: "#F8FAFC",
+                  cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
+                  borderBottom: "2px solid #334155",
+                  position: "sticky", top: 0, zIndex: 1,
+                }}>
+                {h}<SortIcon idx={i} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri} style={{ background: ri % 2 === 0 ? "#F8FAFC" : "#FFFFFF" }}>
+              {row.map((cell, ci) => (
+                <td key={ci} style={{
+                  padding: "9px 12px", borderBottom: "1px solid #F1F5F9",
+                  color: "#334155", whiteSpace: "nowrap",
+                }}>
+                  {typeof cell === "number"
+                    ? cell.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : String(cell ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Main ChartCard ────────────────────────────────────────────────────────────
 interface Props { card: ChartCardType }
 
@@ -498,13 +580,27 @@ export default function ChartCard({ card }: Props) {
               <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500 }}>Loading...</span>
             </div>
           ) : plotData?.data ? (
+            card.chart_type === "table" ? (
+              <SortableTable plotData={plotData} color={cat.color} />
+            ) : (
             <Plot
               data={plotData.data}
-              layout={{ ...(plotData.layout || {}), paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: "#334155", family: "Inter, system-ui, sans-serif", size: 11 }, margin: { t: 8, r: card.chart_type === "heatmap" ? 80 : 16, b: 44, l: 56 }, autosize: true, showlegend: needsLegend, title: undefined }}
-              config={{ responsive: true, displayModeBar: false, scrollZoom: false, doubleClick: false, dragmode: false }}
+              layout={{
+                ...(plotData.layout || {}),
+                paper_bgcolor: "rgba(0,0,0,0)",
+                plot_bgcolor: "rgba(0,0,0,0)",
+                font: { color: "#334155", family: "Inter, system-ui, sans-serif", size: 11 },
+                margin: plotData.layout?.margin || { t: 8, r: card.chart_type === "heatmap" ? 80 : 16, b: 44, l: 56 },
+                autosize: true,
+                showlegend: needsLegend,
+                title: undefined,
+                dragmode: plotData.layout?.dragmode ?? false,
+              }}
+              config={{ responsive: true, displayModeBar: false, scrollZoom: false, doubleClick: false }}
               style={{ width: "100%", height: "100%" }}
               useResizeHandler={true}
             />
+            )
           ) : (
             <div style={{ textAlign: "center", color: "#94A3B8" }}>
               <BarChart2 size={28} style={{ marginBottom: 8, opacity: 0.2 }} />
