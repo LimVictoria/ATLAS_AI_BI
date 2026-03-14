@@ -131,6 +131,12 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Bar ──────────────────────────────────────────────────────────────────
     if chart_type == "bar":
+        # For multi-group data (multiple rows per x), aggregate by summing y
+        if x_col and x_col in df.columns and y_col and y_col in df.columns:
+            if df[x_col].nunique() < len(df):
+                df = df.groupby(x_col, as_index=False)[y_col].sum()
+                n = len(df)
+
         if x_col and x_col.lower() in TIME_COLS_SET:
             df = _sort_time(df, x_col)
             df, x_display = _format_time_labels(df, x_col)
