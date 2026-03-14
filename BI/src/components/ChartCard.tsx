@@ -572,17 +572,34 @@ export default function ChartCard({ card }: Props) {
             {activeFilters.map(([key, val]) => {
               const vals = Array.isArray(val) ? val : [val]
               const color = FILTER_COLORS[key] || "#475569"
-              return vals.map(v => (
-                <span key={`${key}-${v}`} style={{
-                  fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
-                  color: color, background: `${color}12`,
-                  border: `1px solid ${color}30`,
-                  display: "flex", alignItems: "center", gap: 4,
-                }}>
+              const removeFilter = () => applyCardFilter(key, [])
+              return vals.length > 1 ? (
+                // Multi-value: show as one pill with × to clear all
+                <button key={key} onClick={removeFilter}
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    fontSize: 10, fontWeight: 600, padding: "2px 8px 2px 8px", borderRadius: 99,
+                    color, background: `${color}12`, border: `1px solid ${color}30`,
+                    display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
+                  }}>
+                  <span style={{ opacity: 0.5, fontSize: 9 }}>{key.replace(/_/g, " ")}</span>
+                  <span>·</span>
+                  <span>{vals.length} selected</span>
+                  <span style={{ opacity: 0.5, marginLeft: 2, fontSize: 10 }}>×</span>
+                </button>
+              ) : vals.map(v => (
+                <button key={`${key}-${v}`} onClick={removeFilter}
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+                    color, background: `${color}12`, border: `1px solid ${color}30`,
+                    display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
+                  }}>
                   <span style={{ opacity: 0.5, fontSize: 9 }}>{key.replace(/_/g, " ")}</span>
                   <span>·</span>
                   {v}
-                </span>
+                  <span style={{ opacity: 0.5, marginLeft: 2, fontSize: 10 }}>×</span>
+                </button>
               ))
             })}
           </div>
