@@ -166,7 +166,7 @@ def _smart_available_charts(columns: list[str], df: pd.DataFrame, chart_type: st
     # Always keep current chart_type first, deduplicate
     if chart_type not in available:
         available.append(chart_type)
-    return [chart_type] + [a for a in list(dict.fromkeys(available)) if a != chart_type]
+    return list(dict.fromkeys(available))  # preserve natural order, no reordering
 
 
 def _auto_chart_type(columns: list[str], hint: str = None) -> str:
