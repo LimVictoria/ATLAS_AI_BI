@@ -158,3 +158,39 @@ def post_board(req: BoardStateRequest):
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to save board")
     return {"message": "Board saved"}
+
+
+class RerenderRequest(BaseModel):
+    sql: str
+    chart_type: str
+    title: str = "Chart"
+    category: str = "General"
+    filters: Optional[dict] = {}
+
+@router.post("/rerender")
+def rerender_chart(req: RerenderRequest):
+    """Re-render an existing card with a different chart type using its stored SQL."""
+    from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
+    try:
+        df = run_query(req.sql)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQL error: {e}")
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Query returned no rows")
+    df   = _clean_df(df)
+    cols = df.columns.tolist()
+    meta = _infer_meta(cols)
+    meta["category"] = req.category
+    try:
+        chart_json = _build_chart(df, meta, req.chart_type)
+    except Exception:
+        chart_json = _build_chart(df, meta, "table")
+        req.chart_type = "table"
+    available = _smart_available_charts(cols, df, req.chart_type)
+    return {
+        "chart":            chart_json,
+        "chart_type":       req.chart_type,
+        "available_charts": available,
+        "row_count":        len(df),
+        "sql":              req.sql,
+    }
