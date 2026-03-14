@@ -61,7 +61,7 @@ SQL RULES:
 - For date filters: WHERE service_date >= '2024-01-01' AND service_date <= '2024-12-31'
 - GROUP BY all non-aggregated columns in SELECT
 - ORDER BY the main measure DESC unless time-series (then ASC)
-- Limit results to 50 rows max for visualisation: add LIMIT 50
+- Do NOT add LIMIT clauses unless the user explicitly asks for a limit or a 'top N' query
 
 EXAMPLE QUERIES:
 -- Cost by brand
@@ -81,7 +81,7 @@ SELECT plate_number AS vehicle_id, brand, component_category,
        ROUND(SUM(total_cost_myr),2) AS total_cost
 FROM v_maintenance_full
 GROUP BY plate_number, brand, component_category, year, month
-ORDER BY year, month, total_cost DESC LIMIT 50
+ORDER BY year, month, total_cost DESC
 """
 
 
@@ -181,7 +181,7 @@ def sql_tool(sql: str, chart_type_hint: str = None, title: str = "Query Result",
         "sql":              sql,
         "title":            title,
         "category":         category,
-        "available_charts": list(set(available)),
+        "available_charts": [chart_type] + [a for a in list(dict.fromkeys(available)) if a != chart_type],
         "error":            None,
     }
 
