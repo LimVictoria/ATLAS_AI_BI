@@ -106,8 +106,10 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   updateChart: (id, patch) => {
     const newCharts = get().charts.map(c => c.id === id ? { ...c, ...patch } : c)
     set({ charts: newCharts })
-    // Only persist meaningful updates (not loading state flickers)
-    if (!("loading" in patch)) {
+    // Persist unless it's only a loading state change
+    const keys = Object.keys(patch)
+    const loadingOnly = keys.length === 1 && keys[0] === "loading"
+    if (!loadingOnly) {
       persistBoard(newCharts, get().userId)
     }
   },
