@@ -34,6 +34,7 @@ interface DashboardStore {
   setSessionId: (id: string) => void
   userId: string
   boardLoaded: boolean
+  messagesLoaded: boolean
   charts: ChartCard[]
   addChart:       (card: ChartCard) => void
   removeChart:    (id: string) => void
