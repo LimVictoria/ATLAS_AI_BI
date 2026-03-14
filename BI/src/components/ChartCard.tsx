@@ -274,7 +274,7 @@ export default function ChartCard({ card }: Props) {
       let sourceSql = card.base_sql || ""
       if (!sourceSql && card.sql) {
         // Strip existing WHERE clause to get clean base SQL
-        sourceSql = card.sql.replace(/\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s*$)/is, " ").trim()
+        sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
       }
       if (sourceSql) {
         const { rerenderChart } = await import("@/utils/api")
@@ -305,7 +305,7 @@ export default function ChartCard({ card }: Props) {
       // Use base_sql so switching chart type preserves active filters correctly
       let sourceSql = card.base_sql || ""
       if (!sourceSql && card.sql) {
-        sourceSql = card.sql.replace(/\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s*$)/is, " ").trim()
+        sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
       }
       const result = await rerenderChart(sourceSql || card.sql, type, card.title, card.category, card.filters || {})
       updateChart(card.id, {
