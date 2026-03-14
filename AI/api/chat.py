@@ -26,17 +26,16 @@ def build_board_context(board_context) -> str:
             f"  - id={c.id} | title='{c.title}' | chart_type={c.chart_type}"
             f" | filters={json.dumps(c.filters or {})}{sel}"
         )
-        # Fetch live data preview
+        # Fetch live data preview using card's stored SQL
         try:
-            from metrics import METRICS, get_metric_sql
             from agent.nodes import run_query, _clean_df
-            sql = get_metric_sql(c.metric_id, c.filters or {})
-            if sql:
-                df  = run_query(sql)
-                df  = _clean_df(df)
+            card_sql = c.sql or ""
+            if card_sql:
+                df   = run_query(card_sql)
+                df   = _clean_df(df)
                 rows = df.head(3).to_dict(orient="records")
                 preview = " | ".join(
-                    ", ".join(f"{k}={v}" for k,v in row.items())
+                    ", ".join(f"{k}={v}" for k, v in row.items())
                     for row in rows
                 )
                 lines.append(f"    data_preview: {preview}")
@@ -66,6 +65,7 @@ class BoardCard(BaseModel):
     chart_type: str
     filters: Optional[dict] = {}
     selected: Optional[bool] = False
+    sql: Optional[str] = ""
 
 class BoardContext(BaseModel):
     charts_on_canvas: Optional[list[BoardCard]] = []
