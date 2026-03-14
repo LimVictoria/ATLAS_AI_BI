@@ -40,19 +40,29 @@ export async function processUIActions(actions: any[]) {
       const card = currentCharts.find(c => c.id === cardId)
       if (!card) continue
 
-      const updates: Record<string, any> = {}
-
       if (action.chart_type && action.chart_type !== card.chart_type) {
-        // Re-fetch chart data with new chart type
-        const { runMetric } = await import("@/utils/api")
         updateChart(cardId, { loading: true })
         try {
-          const result = await runMetric(card.metric_id, action.chart_type, card.filters)
-          updateChart(cardId, {
-            chart_type: action.chart_type,
-            chart_data: result.chart,
-            loading: false,
-          })
+          // Path B: card has SQL stored — re-render via /chat/rerender
+          // Path A: card has metric_id — use /query/
+          if (card.sql) {
+            const { rerenderChart } = await import("@/utils/api")
+            const result = await rerenderChart(card.sql, action.chart_type, card.title, card.category)
+            updateChart(cardId, {
+              chart_type: action.chart_type,
+              chart_data: result.chart,
+              available_charts: result.available_charts || card.available_charts,
+              loading: false,
+            })
+          } else {
+            const { runMetric } = await import("@/utils/api")
+            const result = await runMetric(card.metric_id, action.chart_type, card.filters)
+            updateChart(cardId, {
+              chart_type: action.chart_type,
+              chart_data: result.chart,
+              loading: false,
+            })
+          }
         } catch {
           updateChart(cardId, { loading: false })
         }
@@ -60,11 +70,17 @@ export async function processUIActions(actions: any[]) {
 
       if (action.filters) {
         const newFilters = { ...card.filters, ...action.filters }
-        const { runMetric } = await import("@/utils/api")
         updateChart(cardId, { loading: true, filters: newFilters })
         try {
-          const result = await runMetric(card.metric_id, card.chart_type, newFilters)
-          updateChart(cardId, { chart_data: result.chart, loading: false })
+          if (card.sql) {
+            const { rerenderChart } = await import("@/utils/api")
+            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
+            updateChart(cardId, { chart_data: result.chart, filters: newFilters, loading: false })
+          } else {
+            const { runMetric } = await import("@/utils/api")
+            const result = await runMetric(card.metric_id, card.chart_type, newFilters)
+            updateChart(cardId, { chart_data: result.chart, filters: newFilters, loading: false })
+          }
         } catch {
           updateChart(cardId, { loading: false })
         }
