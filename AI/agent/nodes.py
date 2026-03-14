@@ -57,7 +57,7 @@ CRITICAL SQL RULES:
 - Use ROUND(value,2) for monetary values
 - Use NULLIF(denominator,0) to avoid division by zero
 - GROUP BY all non-aggregated SELECT columns
-- Time series: ORDER BY year_month ASC
+- Time series: always include year_month in SELECT (not just month or year alone), ORDER BY year_month ASC
 - Category comparisons: ORDER BY main measure DESC
 - No LIMIT unless user asks for top-N
 - ALWAYS include fleet_segment, brand or other filter columns in WHERE if they are active filters
@@ -130,7 +130,17 @@ def _infer_meta(columns: list[str]) -> dict:
         if c not in time_found + cat_found + group_found and cl not in {"year","month","id"}:
             num_found.append(c)
 
-    x_col   = time_found[0] if time_found else (cat_found[0] if cat_found else columns[0])
+    # Prefer year_month for time series (shows both year and month)
+    if time_found:
+        cols_lower_list = [c.lower() for c in time_found]
+        if "year_month" in cols_lower_list:
+            x_col = time_found[cols_lower_list.index("year_month")]
+        elif "year_quarter" in cols_lower_list:
+            x_col = time_found[cols_lower_list.index("year_quarter")]
+        else:
+            x_col = time_found[0]
+    else:
+        x_col = cat_found[0] if cat_found else columns[0]
     y_col   = num_found[0]  if num_found  else (columns[-1] if len(columns) > 1 else columns[0])
     group_col = group_found[0] if group_found and len(cat_found) > 0 else None
 
@@ -141,44 +151,44 @@ def _smart_available_charts(columns: list[str], df: pd.DataFrame, chart_type: st
     """Return semantically appropriate chart types based on data shape."""
     cols_lower = [c.lower() for c in columns]
     has_time   = any(c in TIME_COLS for c in cols_lower)
+    has_cat    = any(c in CAT_COLS for c in cols_lower)
     has_group  = any(c in {"component_category","fleet_segment","maintenance_type",
                            "workshop_type","failure_type"} for c in cols_lower)
     has_stats  = any(c in {"q1","q3","median","mean","std"} for c in cols_lower)
     n_numeric  = sum(1 for c in columns if str(df[c].dtype) in NUMERIC_TYPES)
     n_rows     = len(df)
-    n_cats     = sum(1 for c in cols_lower if c in CAT_COLS)
 
     available = ["table"]  # always
 
-    if has_time:
+    if has_stats:
+        available += ["boxplot", "histogram", "bar"]
+
+    elif has_time:
         available += ["line", "bar"]
+        # Heatmap available whenever there's a time col + any categorical col
+        if has_cat or has_group:
+            available += ["heatmap"]
         if has_group:
-            available += ["stacked_bar", "heatmap"]
-        # No pie, scatter, treemap for time series
+            available += ["stacked_bar"]
 
-    elif has_stats:
-        available += ["boxplot", "histogram"]
-        # No pie, stacked_bar, line
+    elif has_group and has_cat:
+        available += ["stacked_bar", "bar", "heatmap"]
 
-    elif has_group and n_cats >= 1:
-        available += ["stacked_bar", "bar", "heatmap", "table"]
-        # No pie, scatter, line
+    elif n_numeric >= 2 and has_cat:
+        available += ["scatter", "bar"]
 
-    elif n_numeric >= 2 and n_cats >= 1 and not has_time:
-        available += ["scatter", "bar", "table"]
-        # No pie, stacked_bar, line
-
-    elif n_cats >= 1 and n_numeric >= 1:
+    elif has_cat and n_numeric >= 1:
         available += ["bar", "pareto", "waterfall"]
-        if n_rows <= 8:
+        if n_rows <= 10:
             available += ["pie", "treemap"]
-        if n_rows > 8:
+        else:
             available += ["treemap"]
 
-    # Always keep current chart_type first, deduplicate
+    # Always include the current chart_type so its icon never disappears
     if chart_type not in available:
         available.append(chart_type)
-    return list(dict.fromkeys(available))  # preserve natural order, no reordering
+
+    return list(dict.fromkeys(available))
 
 
 def _auto_chart_type(columns: list[str], hint: str = None) -> str:
