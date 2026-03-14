@@ -33,3 +33,11 @@ export const clearChatHistory = (session_id: string) =>
 
 export const listMetrics = () =>
   API.get("/query/metrics").then(r => r.data)
+
+// ── Board persistence ──────────────────────────────────────────────────────────
+
+export const saveBoard = (board_state: any[], user_id: string = "default") =>
+  API.post("/chat/board/save", { user_id, board_state }).then(r => r.data)
+
+export const loadBoard = (user_id: string = "default") =>
+  API.get(`/chat/board/${user_id}`).then(r => r.data)
