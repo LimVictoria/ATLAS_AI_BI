@@ -48,7 +48,9 @@ export default function AIPanel() {
   const buildBoardContext = useCallback(() => ({
     charts_on_canvas: charts.map(c => ({
       id: c.id, title: c.title, metric_id: c.metric_id,
-      chart_type: c.chart_type, filters: c.filters || {}, selected: c.selected || false,
+      chart_type: c.chart_type, filters: c.filters || {},
+      selected: c.selected || false,
+      sql: c.sql || "",
     })),
     selected_ids: charts.filter(c => c.selected).map(c => c.id),
   }), [charts])
