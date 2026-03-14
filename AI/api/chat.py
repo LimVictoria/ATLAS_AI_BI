@@ -173,22 +173,25 @@ def rerender_chart(req: RerenderRequest):
     from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
     from api.filters import build_where_from_filters
 
-    # Inject filters into SQL by replacing or appending WHERE clause
+    # Inject filters into SQL — strip existing WHERE then insert fresh one
     sql = req.sql
     if req.filters:
         where = build_where_from_filters(req.filters)
-        # Strip existing WHERE clause from stored SQL then add new one
-        import re
-        sql_no_where = re.sub(r"(?i)WHERE.*?(?=GROUP BY|ORDER BY|HAVING|LIMIT|$)",
-                              " ", sql, flags=re.DOTALL).strip()
-        # Re-append WHERE before GROUP BY / ORDER BY
-        for kw in ["GROUP BY", "ORDER BY", "HAVING", "LIMIT"]:
-            if kw in sql_no_where.upper():
-                idx = sql_no_where.upper().index(kw)
-                sql = sql_no_where[:idx].rstrip() + " " + where + " " + sql_no_where[idx:]
-                break
-        else:
-            sql = sql_no_where + " " + where
+        if where:
+            import re
+            # Remove any existing WHERE clause
+            sql = re.sub(
+                r'(?i)\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s+HAVING|\s+LIMIT|\s*$)',
+                ' ', sql, flags=re.DOTALL
+            ).strip()
+            # Find insertion point before GROUP BY / ORDER BY / end
+            sql_upper = sql.upper()
+            insert_at = len(sql)
+            for kw in ['GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT']:
+                idx = sql_upper.rfind(kw)
+                if idx != -1 and idx < insert_at:
+                    insert_at = idx
+            sql = sql[:insert_at].rstrip() + ' ' + where + ' ' + sql[insert_at:]
 
     try:
         df = run_query(sql)
