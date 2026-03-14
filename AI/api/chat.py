@@ -13,6 +13,15 @@ from agent.nodes import get_graph, AgentState
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+def _load_user_memory(user_id: str) -> dict:
+    """Load user memory from Supabase, return empty dict on failure."""
+    try:
+        from db.supabase import load_memory
+        return load_memory(user_id)
+    except Exception:
+        return {}
+
+
 # ── Board context builder ──────────────────────────────────────────────────────
 
 def build_board_context(board_context) -> str:
@@ -96,7 +105,7 @@ async def chat(req: ChatRequest):
         "user_message":    req.message,
         "history":         history,
         "board_context":   board_prompt,
-        "user_memory":     "",
+        "user_memory":     _load_user_memory(req.user_id or "default"),
         "intent":          "",
         "selected_card_id": None,
         "sql":             "",
