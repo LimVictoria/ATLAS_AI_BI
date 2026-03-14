@@ -66,7 +66,8 @@ const serialiseChart = (c: ChartCard) => ({
   chart_data: c.chart_data,
   filters: c.filters,
   available_charts: c.available_charts,
-  selected: false,  // never persist selection state
+  sql: c.sql || "",          // ← critical: needed for chart type switching
+  selected: false,
   loading: false,
   x: c.x, y: c.y, w: c.w, h: c.h,
 })
