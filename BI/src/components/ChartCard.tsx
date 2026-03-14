@@ -460,6 +460,33 @@ export default function ChartCard({ card }: Props) {
         )
       })()}
 
+      {/* ── AI filter suggestions ── */}
+      {!flipped && !hasActiveFilters && card.filter_suggestions && card.filter_suggestions.length > 0 && (
+        <div style={{
+          padding: "5px 12px 5px", display: "flex", flexWrap: "wrap", gap: 5,
+          alignItems: "center", borderBottom: "1px solid #F1F5F9", background: "#FAFBFC"
+        }}>
+          <span style={{ fontSize: 9.5, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.07em", marginRight: 2 }}>
+            TRY
+          </span>
+          {card.filter_suggestions.map((s, i) => (
+            <button key={i} onClick={() => applyCardFilter(s.dim, [s.value])}
+              style={{
+                fontSize: 10.5, fontWeight: 500, padding: "3px 10px",
+                borderRadius: 99, cursor: "pointer", transition: "all 0.12s",
+                border: `1px solid ${cat.color}40`,
+                color: cat.color,
+                background: `${cat.color}08`,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = `${cat.color}18` }}
+              onMouseLeave={e => { e.currentTarget.style.background = `${cat.color}08` }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Body ── */}
       {flipped ? (
         <CodeFace metricId={card.metric_id} sql={card.sql} baseSql={card.base_sql} color={cat.color} light={cat.light} />
