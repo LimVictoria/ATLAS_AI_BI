@@ -290,11 +290,29 @@ async def intent_node(state: AgentState) -> AgentState:
 
 async def sql_node(state: AgentState) -> AgentState:
     """LLM writes SQL + picks chart type + title."""
+    # Build personalised memory context
+    memory_hint = ""
+    raw_memory = state.get("user_memory", "")
+    if raw_memory:
+        try:
+            m = json.loads(raw_memory) if isinstance(raw_memory, str) else raw_memory
+            hints = []
+            if m.get("preferred_chart"):
+                hints.append(f"User prefers {m['preferred_chart']} charts — use unless data clearly needs another")
+            if m.get("focus_brands"):
+                hints.append(f"User focuses on: {', '.join(m['focus_brands'])}")
+            if m.get("focus_years"):
+                hints.append(f"User usually looks at years: {', '.join(str(y) for y in m['focus_years'])}")
+            if hints:
+                memory_hint = "\n\nUSER PREFERENCES (apply subtly):\n" + "\n".join(f"- {h}" for h in hints)
+        except Exception:
+            pass
+
     system = f"""You are a DuckDB SQL expert for a fleet maintenance BI platform.
 
 {SCHEMA_GUIDE}
 
-{state.get("board_context", "")}
+{state.get("board_context", "")}{memory_hint}
 
 Return ONLY valid JSON — no markdown, no code blocks:
 {{
@@ -354,11 +372,24 @@ CHART TYPE GUIDE:
 # ── Node 3: correction_node ────────────────────────────────────────────────────
 
 async def correction_node(state: AgentState) -> AgentState:
-    """Feed SQL error back to LLM for self-correction."""
+    """Feed SQL error back to LLM for self-correction with rich context."""
     retries = state.get("sql_retries", 0) + 1
-    print(f"[correction_node] retry {retries}/3 — error: {state['sql_error']}")
-    # Just increment retry count and loop back to sql_node with error context
-    return {**state, "sql_retries": retries}
+    error   = state.get("sql_error", "")
+    bad_sql = state.get("sql", "")
+    print(f"[correction_node] retry {retries}/3 — error: {error}")
+
+    # Annotate error with plain English explanation for the LLM
+    error_hint = error
+    if "not found in FROM clause" in error or "Referenced column" in error:
+        error_hint = f"{error}\n→ You used a column that does not exist in v_maintenance_full. Use ONLY columns listed in the SCHEMA GUIDE."
+    elif "strftime" in error.lower() or "service_date" in error.lower():
+        error_hint = f"{error}\n→ Do NOT use strftime() or service_date. Use the pre-extracted columns: year (INTEGER), month (INTEGER), year_month (TEXT like '2024-01')."
+    elif "syntax error" in error.lower():
+        error_hint = f"{error}\n→ Fix the SQL syntax. Check for missing commas, unclosed parentheses, or invalid keywords."
+    elif "ambiguous" in error.lower():
+        error_hint = f"{error}\n→ Column name is ambiguous. Prefix with table name: v_maintenance_full.column_name"
+
+    return {**state, "sql_retries": retries, "sql_error": error_hint}
 
 
 # ── Node 4: chart_node ─────────────────────────────────────────────────────────
@@ -554,11 +585,34 @@ Be concise. 1-2 sentences."""
 
 async def respond_node(state: AgentState) -> AgentState:
     """Assemble final narrative + ui_actions for the frontend."""
-    # If sql_error still set after retries, explain to user
+    # If sql_error still set after retries, give rich explanation + suggestions
     if state.get("sql_error") and not state.get("chart_json"):
+        error   = state.get("sql_error", "")
+        bad_sql = state.get("sql", "")
+        msg     = state.get("user_message", "")
+
+        # Ask LLM to generate friendly explanation + 3 rephrasing suggestions
+        try:
+            system = f"""You are ATLAS. A SQL query failed. Give the user a helpful response.
+
+USER ASKED: {msg}
+SQL ATTEMPTED: {bad_sql[:300] if bad_sql else "none generated"}
+ERROR: {error[:300]}
+
+Write a response that:
+1. Explains in plain English what went wrong (1 sentence, no jargon)
+2. Suggests 3 specific rephrased questions the user could try instead
+Keep it concise and friendly. Format as plain text, no JSON."""
+
+            messages = [{"role": "system", "content": system},
+                        {"role": "user", "content": "Explain the error and suggest alternatives."}]
+            friendly = await _groq(messages, max_tokens=300)
+        except Exception:
+            friendly = f"I had trouble building that query. Try rephrasing — for example, be specific about which metric (cost, count, downtime) and which dimension (brand, month, component) you want."
+
         return {
             **state,
-            "narrative":  f"I couldn't build that query — {state['sql_error']}. Could you rephrase what you're looking for?",
+            "narrative":  friendly,
             "ui_actions": [],
         }
 
@@ -641,8 +695,60 @@ Rules:
 # ── Node 8: memory_node ────────────────────────────────────────────────────────
 
 async def memory_node(state: AgentState) -> AgentState:
-    """Extract learnable preferences (stub — will write to Supabase in Step 4)."""
-    # Placeholder for Step 4 — memory extraction
+    """Extract user preferences from this turn and persist to Supabase."""
+    from db.supabase import load_memory, save_memory
+
+    try:
+        user_id = "default"
+        existing = load_memory(user_id)
+
+        # Build context for extraction
+        msg       = state.get("user_message", "")
+        sql       = state.get("sql", "")
+        chart     = state.get("chart_type", "")
+        narrative = state.get("narrative", "")
+        df_rows   = state.get("df_rows", [])
+
+        system = f"""You are ATLAS memory extractor. Given a user interaction, extract any learnable preferences.
+
+EXISTING MEMORY: {json.dumps(existing)}
+
+THIS TURN:
+- User asked: {msg}
+- SQL used: {sql[:200] if sql else 'none'}
+- Chart type: {chart}
+- Data sample: {json.dumps(df_rows[:2]) if df_rows else 'none'}
+
+Extract preferences and return ONLY a JSON object merging with existing memory.
+Rules:
+- Only update a field if you have strong evidence from this turn
+- Never delete existing preferences unless contradicted
+- Keep all values as simple strings or lists
+
+Return this exact structure (fill what you can infer, keep existing values for the rest):
+{{
+  "preferred_chart": "{existing.get('preferred_chart', '')}",
+  "focus_brands": {json.dumps(existing.get('focus_brands', []))},
+  "focus_years": {json.dumps(existing.get('focus_years', []))},
+  "focus_metrics": {json.dumps(existing.get('focus_metrics', []))},
+  "preferred_filters": {json.dumps(existing.get('preferred_filters', {}))},
+  "expertise_level": "{existing.get('expertise_level', 'intermediate')}",
+  "last_topics": {json.dumps((existing.get('last_topics') or [])[-4:] + ([msg[:60]] if msg else []))}
+}}"""
+
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": "Extract preferences from this interaction."}]
+
+        raw = await _groq(messages, max_tokens=300)
+        new_memory = _parse_json(raw)
+
+        if isinstance(new_memory, dict) and new_memory:
+            save_memory(user_id, new_memory)
+            print(f"[memory_node] saved: focus_brands={new_memory.get('focus_brands')} preferred_chart={new_memory.get('preferred_chart')}")
+
+    except Exception as e:
+        print(f"[memory_node] failed (non-fatal): {e}")
+
     return state
 
 
