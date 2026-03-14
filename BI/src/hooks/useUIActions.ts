@@ -13,13 +13,15 @@ export async function processUIActions(actions: any[]) {
         console.error("[useUIActions] add_chart action missing chart_data:", action)
         continue
       }
+      // Support both old format (raw.chart = plotly json) and new Path B format (raw = full result)
+      const chartData = raw.chart !== undefined ? raw.chart : raw
       addChart({
         id: uuid(),
-        metric_id: action.metric_id,
-        title: action.title || raw.title || action.metric_id,
-        category: raw.category || "General",
+        metric_id: action.metric_id || raw.metric_id || "dynamic",
+        title: action.title || raw.title || action.metric_id || "Query Result",
+        category: raw.category || action.category || "General",
         chart_type: raw.chart_type || action.chart_type || "bar",
-        chart_data: raw.chart,
+        chart_data: raw.chart !== undefined ? raw.chart : raw,
         filters: action.filters || {},
         available_charts: raw.available_charts || ["bar", "line", "table"],
         selected: false,
