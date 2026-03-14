@@ -12,8 +12,9 @@ export interface ChartCard {
   chart_data: any
   filters: Record<string, any>
   available_charts: ChartType[]
-  sql?: string        // current SQL (may include WHERE filters)
-  base_sql?: string   // original SQL without filters
+  sql?: string
+  base_sql?: string
+  filter_suggestions?: Array<{dim: string; value: string; label: string}>
   selected: boolean
   loading: boolean
   x: number
@@ -69,7 +70,8 @@ const serialiseChart = (c: ChartCard) => ({
   filters: c.filters,
   available_charts: c.available_charts,
   sql: c.sql || "",
-  base_sql: c.base_sql || c.sql || "",  // original unfiltered SQL
+  base_sql: c.base_sql || c.sql || "",
+  filter_suggestions: c.filter_suggestions || [],
   selected: false,
   loading: false,
   x: c.x, y: c.y, w: c.w, h: c.h,
