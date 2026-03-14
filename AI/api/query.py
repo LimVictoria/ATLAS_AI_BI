@@ -153,7 +153,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
         # Enable horizontal scroll for time series with many points
-        is_time_x = x_col and x_col.lower() in time_cols_set
+        is_time_x = x_col and x_col.lower() in TIME_COLS_SET
         bar_layout = {**BASE}
         if is_time_x and n > 12:
             bar_layout["xaxis"] = {**bar_layout.get("xaxis", {}),
