@@ -12,6 +12,7 @@ export interface ChartCard {
   chart_data: any
   filters: Record<string, any>
   available_charts: ChartType[]
+  sql?: string
   selected: boolean
   loading: boolean
   x: number
