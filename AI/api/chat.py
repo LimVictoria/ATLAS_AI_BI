@@ -14,11 +14,13 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 def _load_user_memory(user_id: str) -> dict:
-    """Load user memory from Supabase, return empty dict on failure."""
+    """Load user memory from Supabase, return empty dict on any failure."""
     try:
         from db.supabase import load_memory
-        return load_memory(user_id)
-    except Exception:
+        result = load_memory(user_id)
+        return result if isinstance(result, dict) else {}
+    except Exception as e:
+        print(f"[memory] load skipped (table may not exist yet): {e}")
         return {}
 
 
