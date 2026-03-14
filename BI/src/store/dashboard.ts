@@ -82,6 +82,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   setSessionId: (id) => set({ sessionId: id }),
   userId: "default",
   boardLoaded: false,
+  messagesLoaded: false,
 
   charts: [],
 
@@ -127,12 +128,15 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     try {
       const resp = await loadBoard(get().userId)
       const saved: ChartCard[] = resp.board_state || []
-      if (saved.length > 0) {
-        set({ charts: saved, boardLoaded: true })
-        _cardCounter = saved.length
-      } else {
-        set({ boardLoaded: true })
-      }
+      // Filter out broken cards (no chart_data, or chart_data contains "Metric Removed")
+      const valid = saved.filter(c => {
+        if (!c.chart_data) return false
+        const raw = typeof c.chart_data === "string" ? c.chart_data : JSON.stringify(c.chart_data)
+        if (raw.includes("Metric Removed") || raw.includes("metric_removed")) return false
+        return true
+      })
+      set({ charts: valid, boardLoaded: true })
+      _cardCounter = valid.length
     } catch (e) {
       console.warn("[Board] load failed:", e)
       set({ boardLoaded: true })
@@ -150,6 +154,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   clearMessages: () => set({ messages: [] }),
 
   loadMessagesFromServer: async () => {
+    if (get().messagesLoaded) return
     try {
       const { getChatHistory } = await import("@/utils/api")
       const resp = await getChatHistory(get().userId)
@@ -160,9 +165,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
         timestamp: new Date(m.created_at || Date.now()),
         loading: false,
       }))
-      if (msgs.length > 0) {
-        set({ messages: msgs })
-      }
+      set({ messages: msgs.length > 0 ? msgs : get().messages, messagesLoaded: true })
     } catch (e) {
       console.warn("[Messages] load failed:", e)
     }
