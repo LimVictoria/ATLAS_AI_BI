@@ -77,7 +77,7 @@ async function loadFilterOptions(): Promise<Record<string, string[]>> {
 
 // Filter display labels
 const FILTER_LABELS: Record<string, string> = {
-  brand: "Brand", year: "Year", quarter: "Quarter",
+  brand: "Brand", year: "Year", month: "Month", quarter: "Quarter",
   fleet_segment: "Fleet Segment", maintenance_type: "Maintenance Type",
   criticality_level: "Criticality Level", workshop_type: "Workshop Type",
   region: "Region", component_category: "Component",
@@ -279,6 +279,26 @@ function CodeFace({ metricId, sql, baseSql, color, light }: { metricId: string; 
 // ── Sortable React Table ─────────────────────────────────────────────────────
 type SortDir = "asc" | "desc" | null
 
+// Defined outside component so React doesn't recreate it on every render
+function SortIcon({ active, dir, color }: { active: boolean; dir: SortDir; color: string }) {
+  if (!active) return (
+    <svg width="12" height="12" viewBox="0 0 12 12" style={{ marginLeft: 5, opacity: 0.35, flexShrink: 0 }}>
+      <path d="M4 4.5L6 2L8 4.5" stroke="#94A3B8" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path d="M4 7.5L6 10L8 7.5" stroke="#94A3B8" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  )
+  if (dir === "asc") return (
+    <svg width="12" height="12" viewBox="0 0 12 12" style={{ marginLeft: 5, flexShrink: 0 }}>
+      <path d="M3 7.5L6 4L9 7.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  )
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" style={{ marginLeft: 5, flexShrink: 0 }}>
+      <path d="M3 4.5L6 8L9 4.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  )
+}
+
 function SortableTable({ plotData, color }: { plotData: any; color: string }) {
   const [sortCol, setSortCol] = useState<number | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
@@ -286,15 +306,12 @@ function SortableTable({ plotData, color }: { plotData: any; color: string }) {
   if (!plotData?.data?.[0]) return null
   const tableTrace = plotData.data[0]
   const headers: string[] = (tableTrace.header?.values || []).map((v: string) =>
-    v.replace(/<b>|<\/b>/g, "")
+    String(v).replace(/<[^>]+>/g, "")
   )
   const rawCols: any[][] = tableTrace.cells?.values || []
-
-  // Transpose columns → rows
   const nRows = rawCols[0]?.length || 0
   let rows = Array.from({ length: nRows }, (_, i) => rawCols.map((col: any[]) => col[i]))
 
-  // Apply sort
   if (sortCol !== null && sortDir !== null) {
     rows = [...rows].sort((a, b) => {
       const va = a[sortCol]; const vb = b[sortCol]
@@ -306,16 +323,10 @@ function SortableTable({ plotData, color }: { plotData: any; color: string }) {
     })
   }
 
-  const handleSort = (colIdx: number) => {
-    if (sortCol !== colIdx) { setSortCol(colIdx); setSortDir("asc"); return }
-    if (sortDir === "asc")  { setSortDir("desc"); return }
-    if (sortDir === "desc") { setSortCol(null); setSortDir(null) }
-  }
-
-  const SortIcon = ({ idx }: { idx: number }) => {
-    if (sortCol !== idx) return <span style={{ opacity: 0.3, fontSize: 9, marginLeft: 4 }}>⇅</span>
-    if (sortDir === "asc")  return <span style={{ color, fontSize: 9, marginLeft: 4 }}>↑</span>
-    return <span style={{ color, fontSize: 9, marginLeft: 4 }}>↓</span>
+  const handleSort = (idx: number) => {
+    if (sortCol !== idx) { setSortCol(idx); setSortDir("asc") }
+    else if (sortDir === "asc") { setSortDir("desc") }
+    else { setSortCol(null); setSortDir(null) }
   }
 
   return (
@@ -324,15 +335,17 @@ function SortableTable({ plotData, color }: { plotData: any; color: string }) {
         <thead>
           <tr>
             {headers.map((h, i) => (
-              <th key={i} onClick={() => handleSort(i)}
-                style={{
-                  padding: "10px 12px", textAlign: "left", fontWeight: 600,
-                  background: "#1E293B", color: "#F8FAFC",
-                  cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
-                  borderBottom: "2px solid #334155",
-                  position: "sticky", top: 0, zIndex: 1,
-                }}>
-                {h}<SortIcon idx={i} />
+              <th key={i} onClick={() => handleSort(i)} style={{
+                padding: "10px 12px", textAlign: "left", fontWeight: 600,
+                background: "#1E293B", color: "#F8FAFC",
+                cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
+                borderBottom: "2px solid #334155",
+                position: "sticky", top: 0, zIndex: 1,
+              }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  {h}
+                  <SortIcon active={sortCol === i} dir={sortCol === i ? sortDir : null} color="#60A5FA" />
+                </div>
               </th>
             ))}
           </tr>
@@ -365,7 +378,13 @@ export default function ChartCard({ card }: Props) {
   const { toggleSelect, removeChart, updateChart, addChart } = useDashboardStore()
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(card.title)
-  const [showFilters, setShowFilters] = useState(false)
+  const [showFiltersLocal, setShowFiltersLocal] = useState(false)
+  const showFilters = showFiltersLocal || !!card.showFilters
+  const setShowFilters = (val: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof val === "function" ? val(showFilters) : val
+    setShowFiltersLocal(next)
+    if (!next) updateChart(card.id, { showFilters: false })
+  }
   const [flipped, setFlipped] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (editingTitle) inputRef.current?.focus() }, [editingTitle])
@@ -417,8 +436,9 @@ export default function ChartCard({ card }: Props) {
         sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
       }
       const result = await rerenderChart(sourceSql || card.sql, type, card.title, card.category, card.filters || {})
+      // Use result.chart_type in case backend fell back (e.g. bar → table on error)
       updateChart(card.id, {
-        chart_type: type as ChartType,
+        chart_type: (result.chart_type || type) as ChartType,
         chart_data: result.chart,
         sql: result.sql || card.sql,
         base_sql: card.base_sql || sourceSql,
@@ -541,7 +561,7 @@ export default function ChartCard({ card }: Props) {
         const activeFilters = Object.entries(card.filters || {})
           .filter(([k, v]) => k !== "time_shortcut" && v && (Array.isArray(v) ? v.length > 0 : true))
         const FILTER_COLORS: Record<string, string> = {
-          brand: "#2563EB", year: "#0891B2", quarter: "#7C3AED",
+          brand: "#2563EB", year: "#0891B2", month: "#0891B2", quarter: "#7C3AED",
           fleet_segment: "#059669", maintenance_type: "#D97706",
           criticality_level: "#DC2626", workshop_type: "#0891B2",
           region: "#0891B2",
@@ -580,7 +600,7 @@ export default function ChartCard({ card }: Props) {
               <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500 }}>Loading...</span>
             </div>
           ) : plotData?.data ? (
-            card.chart_type === "table" ? (
+            (card.chart_type === "table" || plotData?.data?.[0]?.type === "table") ? (
               <SortableTable plotData={plotData} color={cat.color} />
             ) : (
             <Plot
