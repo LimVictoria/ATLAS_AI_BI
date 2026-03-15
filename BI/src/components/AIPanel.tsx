@@ -40,9 +40,7 @@ export default function AIPanel() {
         addMessage({
           id: "dq-warning",
           role: "system",
-          text: `⚠️ **Data Quality Notice**
-${warnings.map((w: string) => `· ${w}`).join("
-")}`,
+          text: ["\u26a0\ufe0f Data Quality Notice", ...warnings.map((w: string) => "\u00b7 " + w)].join("\n"),
           timestamp: new Date(),
           loading: false,
         })
