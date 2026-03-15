@@ -131,6 +131,7 @@ async def chat(req: ChatRequest):
         "chart_category":  "General",
         "narrative":       "",
         "ui_actions":      [],
+        "replace_card_id": None,
     }
 
     try:
@@ -300,12 +301,71 @@ def rerender_chart(req: RerenderRequest):
     cols = df.columns.tolist()
     meta = _infer_meta(cols)
     meta["category"] = req.category
+
+    # Enrich meta for chart types that need specific columns
+    chart_type = req.chart_type
+    cols_lower  = [c.lower() for c in cols]
+    numeric_cols = [c for c in cols if str(df[c].dtype) in {"int64","float64","int32","float32"}]
+    cat_cols_found = [c for c in cols if c.lower() in
+                      {"brand","fleet_segment","component_category","maintenance_type",
+                       "workshop_type","region","failure_type","criticality_level",
+                       "plate_number","workshop_name","component_name","month_name"}]
+
+    # For heatmap: need x_col (time/cat), y_col (cat), z_col (numeric)
+    if chart_type == "heatmap":
+        if len(cat_cols_found) >= 2:
+            meta["x_col"] = cat_cols_found[1]  # e.g. month_name
+            meta["y_col"] = cat_cols_found[0]  # e.g. brand
+        if numeric_cols:
+            meta["z_col"] = numeric_cols[0]
+
+    # For stacked_bar: need x_col (primary cat), y_col (numeric), group_col (secondary cat)
+    elif chart_type == "stacked_bar":
+        if len(cat_cols_found) >= 2:
+            meta["x_col"] = cat_cols_found[0]
+            meta["group_col"] = cat_cols_found[1]
+        elif len(cat_cols_found) == 1 and not meta.get("group_col"):
+            meta["group_col"] = cat_cols_found[0]
+        if numeric_cols:
+            meta["y_col"] = numeric_cols[0]
+
+    # For scatter: need x_col and y_col both numeric, label_col for text
+    elif chart_type == "scatter":
+        if len(numeric_cols) >= 2:
+            meta["x_col"] = numeric_cols[0]
+            meta["y_col"] = numeric_cols[1]
+        if cat_cols_found:
+            meta["label_col"] = cat_cols_found[0]
+        if len(numeric_cols) >= 3:
+            meta["size_col"] = numeric_cols[2]
+
+    # For boxplot: need x_col (cat), and q1/median/q3 cols
+    elif chart_type == "boxplot":
+        stat_cols = {c.lower(): c for c in cols if c.lower() in
+                     {"q1","cost_q1","median","cost_median","q3","cost_q3",
+                      "min","cost_min","max","cost_max","mean","cost_mean"}}
+        if stat_cols:
+            meta["q1_col"]     = stat_cols.get("q1") or stat_cols.get("cost_q1") or numeric_cols[0] if numeric_cols else None
+            meta["median_col"] = stat_cols.get("median") or stat_cols.get("cost_median")
+            meta["q3_col"]     = stat_cols.get("q3") or stat_cols.get("cost_q3")
+
+    # For treemap: need parent_col, label_col, value_col
+    elif chart_type == "treemap":
+        if len(cat_cols_found) >= 2:
+            meta["parent_col"] = cat_cols_found[0]
+            meta["x_col"]      = cat_cols_found[1]
+        elif cat_cols_found:
+            meta["x_col"] = cat_cols_found[0]
+        if numeric_cols:
+            meta["y_col"] = numeric_cols[0]
+
     try:
-        chart_json = _build_chart(df, meta, req.chart_type)
-    except Exception:
+        chart_json = _build_chart(df, meta, chart_type)
+    except Exception as e:
+        print(f"[rerender] _build_chart failed for {chart_type}: {e}, falling back to table")
         chart_json = _build_chart(df, meta, "table")
-        req.chart_type = "table"
-    available = _smart_available_charts(cols, df, req.chart_type)
+        chart_type = "table"
+    available = _smart_available_charts(cols, df, chart_type)
     import re as _re
     # Sanitize chart_json — replace any NaN/Inf Plotly may have embedded
     chart_json = _re.sub(r'\bNaN\b', '0', chart_json)
