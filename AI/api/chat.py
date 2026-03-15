@@ -1,75 +1,147 @@
 """
-ATLAS BI — /chat endpoint — LangGraph agent
+ATLAS BI — /chat endpoint
 """
 import os
 import json
+import httpx
+from datetime import datetime
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
-from db.supabase import save_message, load_messages, clear_messages, save_board, load_board
-from agent.nodes import get_graph, AgentState
+from metrics import METRICS, TIME_SHORTCUTS, get_metrics_index
+from db.supabase import get_supabase
+from api.query import QueryRequest, run_metric
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL   = "llama-3.3-70b-versatile"
+GROQ_MODEL_FALLBACK = "llama-3.1-8b-instant"   # faster, higher rate limit
+GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
-def _load_user_memory(user_id: str) -> dict:
-    """Load user memory from Supabase, return empty dict on any failure."""
-    try:
-        from db.supabase import load_memory
-        result = load_memory(user_id)
-        return result if isinstance(result, dict) else {}
-    except Exception as e:
-        print(f"[memory] load skipped (table may not exist yet): {e}")
-        return {}
+METRICS_INDEX = get_metrics_index()
 
+SYSTEM_PROMPT = f"""You are ATLAS, a friendly and concise AI analyst for a fleet maintenance BI platform.
 
-# ── Board context builder ──────────────────────────────────────────────────────
+DATASET CONTEXT: Malaysian truck fleet, 2020–2024. Brands: Scania, Volvo, Mercedes-Benz, MAN, Hino.
+"This month" = Dec 2024. "Last year" = 2023. "This year" = 2024.
 
-def build_board_context(board_context) -> str:
-    if not board_context or not board_context.charts_on_canvas:
-        return "\nBOARD_CONTEXT: Canvas is empty — no charts yet.\n"
+AVAILABLE METRICS (metric_id → description → available_charts):
+{json.dumps(METRICS_INDEX, indent=2)}
 
-    lines = [f"\nBOARD_CONTEXT: {len(board_context.charts_on_canvas)} chart(s) on canvas:"]
-    for c in board_context.charts_on_canvas:
-        sel = " ← SELECTED" if c.id in (board_context.selected_ids or []) else ""
-        lines.append(
-            f"  - id={c.id} | title='{c.title}' | chart_type={c.chart_type}"
-            f" | filters={json.dumps(c.filters or {})}{sel}"
-        )
-        # Fetch live data preview using card's stored SQL
-        try:
-            from agent.nodes import run_query, _clean_df
-            card_sql = c.sql or ""
-            if card_sql:
-                df   = run_query(card_sql)
-                df   = _clean_df(df)
-                rows = df.head(3).to_dict(orient="records")
-                preview = " | ".join(
-                    ", ".join(f"{k}={v}" for k, v in row.items())
-                    for row in rows
-                )
-                lines.append(f"    data_preview: {preview}")
-        except Exception as preview_err:
-            print(f"[board_context] preview failed for card {c.id}: {preview_err}")
-            pass
+TIME SHORTCUTS: {json.dumps(list(TIME_SHORTCUTS.keys()))}
 
-    selected = [c for c in board_context.charts_on_canvas
-                if c.id in (board_context.selected_ids or [])]
-    if selected:
-        s = selected[0]
-        lines.append(f"\nSELECTED CARD: id={s.id}, title='{s.title}', chart_type={s.chart_type}")
-    else:
-        lines.append("\nSELECTED CARD: none")
-    return "\n".join(lines) + "\n"
+SUPPORTED CHART TYPES:
+- bar: comparisons between categories
+- line: trends over time
+- pie: proportions/ratios
+- table: detailed data grid
+- pareto: 80/20 analysis — bars + cumulative % line
+- waterfall: cumulative buildup / contribution breakdown
+- heatmap: 2D intensity grid (use metric: cost_heatmap_brand_month)
+- boxplot: distribution, spread, outliers (use metric: cost_distribution_by_brand)
+- scatter: correlation between two measures (use metric: cost_vs_downtime_scatter)
+- treemap: hierarchical proportions (use metric: fleet_cost_treemap or failure_count_by_component)
+- histogram: frequency distribution (use metric: downtime_histogram)
+- stacked_bar: breakdown of a total into sub-components (use metric: cost_by_brand_and_component or downtime_by_brand_and_component)
 
+CHART SELECTION RULES:
+- ONLY use a chart_type if it appears in the metric's available_charts list
+- If user requests a chart type not available for that metric, pick the closest available alternative and mention it
+- For heatmap → always use metric cost_heatmap_brand_month
+- For scatter/correlation → always use metric cost_vs_downtime_scatter
+- For boxplot/distribution → always use metric cost_distribution_by_brand
+- For treemap → use fleet_cost_treemap or failure_count_by_component
+- For waterfall → use cost_waterfall_by_category or total_cost_by_brand
+- For histogram → use downtime_histogram
 
-# ── Models ─────────────────────────────────────────────────────────────────────
+UI ACTIONS:
+- add_chart: show a metric visualisation on the canvas
+- modify_chart: change chart_type or filters of an existing card (requires card_id)
+- add_filter: apply a dimension filter to selected cards
+- reset_filters: clear all filters
+
+BOARD AWARENESS RULES:
+- You will receive the current board state in each message under BOARD_CONTEXT
+- Use it to answer questions like "how many charts do I have?", "what is chart X showing?", "list my charts"
+- When user says "this chart", "the selected chart", or "change it" — use the selected card from BOARD_CONTEXT
+- When asked to explain a chart: describe what the metric measures, what the data shows, and include the SQL used
+- When asked for the code: provide a clean Python + Plotly snippet the user could run independently
+
+MODIFY CHART RULES:
+- If user says "change this to X chart" and a card is selected → emit modify_chart action with that card's id and new chart_type
+- Confirm in narrative: "I've changed [chart title] to a [chart_type] chart."
+- If chart_type is not in available_charts for that metric → use closest valid type and inform user
+
+RESPONSE — return ONLY valid JSON, no markdown, no code blocks:
+{{
+  "narrative": "Your friendly reply. 1-3 sentences. Plain English only — no JSON, no curly braces.",
+  "ui_actions": [],
+  "fallback_sql": null
+}}
+
+INTENT → METRIC MAPPING (always follow these):
+- "which components fail / fail most / failure by component" → metric: failure_count_by_component
+- "failure by brand / which brand fails" → metric: failure_count_by_brand
+- "failure trend / quarterly failures" → metric: failure_trend_by_quarter
+- "cost by brand / total cost brand" → metric: total_cost_by_brand
+- "cost by workshop" → metric: total_cost_by_workshop
+- "cost trend / monthly cost" → metric: cost_trend_by_month
+- "cost by component / component cost" → metric: total_cost_by_component_category
+- "downtime by brand" → metric: downtime_by_brand
+- "downtime by component" → metric: downtime_by_component_category
+- "scheduled vs unscheduled / maintenance ratio" → metric: scheduled_vs_unscheduled
+- "YoY / year over year cost" → metric: yoy_cost_comparison
+- "last 12 months / rolling 12" → metric: last_12_months_trend
+- "heatmap / brand month grid" → metric: cost_heatmap_brand_month
+- "cost by brand and month / monthly cost per brand / number of vehicles and cost by year month / build a table with brand cost and month / cost incurred by month / brand monthly breakdown" → metric: cost_by_brand_and_month, chart_type: table
+- "vehicle and cost by month / cost per vehicle by month / table of vehicle cost and month / which vehicle cost how much per month / vehicle maintenance cost year month / produce a table with vehicle cost and month" → metric: cost_per_vehicle_by_month, chart_type: table
+- "components within cost / cost breakdown by component / stacked brand component / what makes up cost / show the breakdown / what is inside this cost / show components" → metric: cost_by_brand_and_component, chart_type: stacked_bar
+- "downtime breakdown by component / downtime stacked" → metric: downtime_by_brand_and_component, chart_type: stacked_bar
+
+CRITICAL STACKED BAR RULE:
+- When user asks to see "what is inside" or "breakdown of components" for a cost chart → ALWAYS emit add_chart with metric=cost_by_brand_and_component and chart_type=stacked_bar. NEVER use treemap for this. NEVER use modify_chart for this (it is a different metric, so it must be a NEW card).
+- Do NOT mention treemap in your narrative unless the user explicitly asked for a treemap.
+- The narrative for stacked bar should say: "I've added a stacked bar chart showing the cost breakdown by component for each brand."
+- "scatter / cost vs downtime / correlation" → metric: cost_vs_downtime_scatter
+- "boxplot / distribution / cost spread" → metric: cost_distribution_by_brand
+- "waterfall / cost buildup / cumulative cost" → metric: cost_waterfall_by_category
+- "treemap / hierarchical / fleet cost tree" → metric: fleet_cost_treemap
+- "histogram / downtime distribution" → metric: downtime_histogram
+
+CRITICAL MODIFY vs ADD RULES:
+- If SELECTED CARD exists in BOARD_CONTEXT AND user says "change", "switch", "modify", "convert", "make it", "turn into" → ALWAYS emit modify_chart (NEVER add_chart)
+- modify_chart requires: card_id = the selected card's id, plus chart_type and/or filters to change
+- If user asks to ADD information to an existing chart (e.g. "include X in this chart") → explain you cannot merge metrics, but offer to add a separate companion chart alongside
+- NEVER emit add_chart when a card is selected and user is asking to modify it
+
+CONVERSATIONAL vs VISUAL RULES:
+- "why", "what causes", "explain", "is it because", "reason" → answer in narrative ONLY using data_preview values. NO new chart.
+- "show me", "visualise", "chart", "plot", "display" → add chart ONLY if that metric is not already on the board.
+- "what is the average / total / count / number of vehicles" AND the data is already visible in a board chart → answer from data_preview, say exactly which card has that info e.g. "You can see this in the 'Total Maintenance Cost by Brand' card — Scania has 73 vehicles."
+- "can we find out X" / "can you build a table showing X" → first check data_preview. If X is already shown in an existing card, say "That information is already in the '[card title]' card on your board" and quote the values. Do NOT add a duplicate chart.
+- If the board already has a chart for the same metric → NEVER add it again under any circumstances. NEVER say "I've added a table" if the data is already there.
+
+RULES:
+1. Before adding any chart, check BOARD_CONTEXT. If a chart for the same metric_id already exists, do NOT add it. Instead reference it by title: "The '[title]' card already shows this."
+2. The narrative must be plain English only — no metric_id, no JSON, no code, NO markdown tables. NEVER print a table in the narrative. If data needs to be shown in tabular form, emit add_chart with chart_type "table" so it appears as a visual card on the board.
+3. Use data_preview values in BOARD_CONTEXT to give specific numeric answers (e.g. "Scania has 73 vehicles and costs MYR 43,546 per vehicle").
+4. For time-aware queries add time_shortcut to the filters.
+5. Multiple charts fine — "compare X and Y" → two add_chart actions only if neither exists on the board.
+6. If no metric matches, set fallback_sql to a DuckDB SQL query against v_maintenance_full.
+7. When emitting modify_chart, confirm in narrative: "I've changed [title] to a [type] chart."
+8. When asked to merge metrics into one chart → explain it's not possible, offer companion chart instead.
+9. For "why" questions: reason using data_preview values, give a 2-3 sentence insight using specific numbers. Only add a new chart if it shows something not already visible.
+10. data_preview columns for total_cost_by_brand include: fleet_size (number of unique trucks), cost_per_vehicle (total cost ÷ fleet), events_per_vehicle (maintenance frequency). Use these to distinguish "more trucks" vs "more expensive per truck" explanations.
+11. NEVER contradict yourself. Do not say "I've added a chart" and then say "I noticed the card already exists." Pick one: either add (if genuinely new) or reference the existing card.
+"""
+
 
 class ChatMessage(BaseModel):
     role: str
     content: str
+
 
 class BoardCard(BaseModel):
     id: str
@@ -78,11 +150,12 @@ class BoardCard(BaseModel):
     chart_type: str
     filters: Optional[dict] = {}
     selected: Optional[bool] = False
-    sql: Optional[str] = ""
+
 
 class BoardContext(BaseModel):
     charts_on_canvas: Optional[list[BoardCard]] = []
     selected_ids: Optional[list[str]] = []
+
 
 class ChatRequest(BaseModel):
     session_id: str
@@ -90,185 +163,234 @@ class ChatRequest(BaseModel):
     history: Optional[list[ChatMessage]] = []
     board_context: Optional[BoardContext] = None
 
-class BoardStateRequest(BaseModel):
-    board_state: list
-    user_id: Optional[str] = "default"
+
+async def call_groq(messages: list[dict], model: str = None) -> str:
+    import asyncio
+    chosen_model = model or GROQ_MODEL
+    async with httpx.AsyncClient(timeout=40) as client:
+        for attempt in range(3):
+            try:
+                response = await client.post(
+                    GROQ_URL,
+                    headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                    json={"model": chosen_model, "messages": messages, "temperature": 0.1, "max_tokens": 1500},
+                )
+                if response.status_code == 429:
+                    # Rate limited — check retry-after header, wait, then try fallback model
+                    retry_after = float(response.headers.get("retry-after", 2 * (attempt + 1)))
+                    wait = min(retry_after, 8)
+                    print(f"[Groq] 429 rate limit on {chosen_model}, waiting {wait}s (attempt {attempt+1})")
+                    await asyncio.sleep(wait)
+                    if chosen_model != GROQ_MODEL_FALLBACK:
+                        chosen_model = GROQ_MODEL_FALLBACK  # switch to fast model
+                    continue
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"]
+            except httpx.TimeoutException:
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                raise
+        # All retries exhausted
+        raise Exception(f"Groq rate limit exceeded after 3 attempts. Please wait a moment and try again.")
 
 
-# ── Chat endpoint ──────────────────────────────────────────────────────────────
+def build_board_context_prompt(board_context: BoardContext | None) -> str:
+    if not board_context or not board_context.charts_on_canvas:
+        return "\nBOARD_CONTEXT: Canvas is empty — no charts yet.\n"
+
+    lines = [f"\nBOARD_CONTEXT: {len(board_context.charts_on_canvas)} chart(s) on canvas:"]
+    for c in board_context.charts_on_canvas:
+        metric = METRICS.get(c.metric_id, {})
+        selected_marker = " ← SELECTED" if c.id in (board_context.selected_ids or []) else ""
+        filters_str = json.dumps(c.filters) if c.filters else "none"
+        lines.append(
+            f"  - id={c.id} | title='{c.title}' | metric={c.metric_id} "
+            f"| chart_type={c.chart_type} | filters={filters_str}{selected_marker}"
+        )
+        if metric:
+            lines.append(f"    description: {metric.get('description','')}")
+            lines.append(f"    available_charts: {metric.get('available_charts', [])}")
+        # Fetch live summary data so LLM can reason about actual values
+        try:
+            from api.query import QueryRequest, run_metric as _run_metric
+            req = QueryRequest(metric_id=c.metric_id, chart_type="table", filters=c.filters or {})
+            result = _run_metric(req)
+            summary = result.get("summary", [])
+            if summary:
+                # Format top rows as readable key=value pairs
+                row_strs = []
+                for row in summary[:5]:
+                    row_strs.append(", ".join(f"{k}={v}" for k, v in row.items()))
+                lines.append(f"    data_preview (top {len(summary)} rows): {' | '.join(row_strs)}")
+        except Exception as e:
+            pass  # silently skip if data fetch fails
+
+    selected = [c for c in board_context.charts_on_canvas if c.id in (board_context.selected_ids or [])]
+    if selected:
+        s = selected[0]
+        lines.append(f"\nSELECTED CARD: id={s.id}, title='{s.title}', metric={s.metric_id}, chart_type={s.chart_type}")
+    else:
+        lines.append("\nSELECTED CARD: none")
+
+    return "\n".join(lines) + "\n"
+
+
+STACKED_BAR_METRICS = {"cost_by_brand_and_component", "downtime_by_brand_and_component"}
+
+def execute_chart_action(action: dict) -> dict | None:
+    if action.get("action") != "add_chart":
+        return None
+
+    metric_id  = action.get("metric_id", "")
+    chart_type = action.get("chart_type")
+
+    print(f"[execute_chart_action] metric_id={metric_id!r} chart_type={chart_type!r}")
+
+    # Validate metric exists
+    if metric_id not in METRICS:
+        # Try fuzzy match: find closest metric key
+        candidates = [k for k in METRICS if any(w in k for w in metric_id.replace("-","_").split("_") if len(w) > 3)]
+        if candidates:
+            metric_id = candidates[0]
+            print(f"[execute_chart_action] fuzzy matched to {metric_id!r}")
+        else:
+            print(f"[execute_chart_action] UNKNOWN metric {metric_id!r}, available: {list(METRICS.keys())[:10]}")
+            return None
+
+    # Safety remap: stacked_bar on wrong metric → swap metric
+    if chart_type == "stacked_bar" and metric_id not in STACKED_BAR_METRICS:
+        metric_id = "downtime_by_brand_and_component" if "downtime" in metric_id else "cost_by_brand_and_component"
+        print(f"[execute_chart_action] stacked_bar remapped to {metric_id!r}")
+
+    try:
+        req = QueryRequest(
+            metric_id=metric_id,
+            chart_type=chart_type,
+            filters=action.get("filters", {}),
+        )
+        data = run_metric(req)
+        print(f"[execute_chart_action] SUCCESS metric_id={metric_id!r} rows={data.get('row_count',0)}")
+        return {**action, "metric_id": metric_id, "chart_data": data}
+    except Exception as e:
+        import traceback
+        print(f"[execute_chart_action] FAILED metric_id={metric_id!r}: {e}")
+        print(traceback.format_exc())
+        return None
+
+
+def execute_modify_action(action: dict, board_context: BoardContext | None) -> dict:
+    """Validate modify_chart — ensure card_id exists and chart_type is valid."""
+    card_id = action.get("card_id")
+    new_chart_type = action.get("chart_type")
+    new_filters = action.get("filters")
+
+    if not card_id and board_context and board_context.selected_ids:
+        card_id = board_context.selected_ids[0]
+        action["card_id"] = card_id
+
+    # Validate chart type against metric
+    if card_id and board_context:
+        card = next((c for c in board_context.charts_on_canvas if c.id == card_id), None)
+        if card and new_chart_type:
+            metric = METRICS.get(card.metric_id, {})
+            available = metric.get("available_charts", [])
+            if new_chart_type not in available and available:
+                action["chart_type"] = available[0]
+                action["fallback_note"] = f"{new_chart_type} not available, using {available[0]}"
+
+    return action
+
+
+def save_message(session_id: str, role: str, content: dict):
+    try:
+        get_supabase().table("bi_chat_history").insert({
+            "session_id": session_id, "role": role,
+            "content": content, "created_at": datetime.utcnow().isoformat(),
+        }).execute()
+    except Exception as e:
+        print(f"[Supabase] Save failed: {e}")
+
+
+def load_history(session_id: str) -> list[dict]:
+    try:
+        resp = get_supabase().table("bi_chat_history") \
+            .select("role,content").eq("session_id", session_id) \
+            .order("created_at").limit(20).execute()
+        return resp.data or []
+    except Exception:
+        return []
+
 
 @router.post("/")
 async def chat(req: ChatRequest):
-    try:
-        board_prompt = build_board_context(req.board_context)
-    except Exception as e:
-        import traceback
-        print(f"[chat] build_board_context failed: {traceback.format_exc()}")
-        board_prompt = "\nBOARD_CONTEXT: Error reading board context.\n"
+    board_prompt = build_board_context_prompt(req.board_context)
 
-    history = [
-        {"role": m.role, "content": m.content if isinstance(m.content, str) else json.dumps(m.content)}
-        for m in (req.history or [])
-    ]
+    # Inject board context into system prompt dynamically
+    dynamic_system = SYSTEM_PROMPT + board_prompt
 
-    initial_state: AgentState = {
-        "user_message":    req.message,
-        "history":         history,
-        "board_context":   board_prompt,
-        "user_memory":     json.dumps(_load_user_memory(req.user_id or "default")),
-        "intent":          "",
-        "selected_card_id": None,
-        "sql":             "",
-        "sql_error":       "",
-        "sql_retries":     0,
-        "df_rows":         [],
-        "df_columns":      [],
-        "chart_json":      "",
-        "chart_type":      "",
-        "available_charts": [],
-        "chart_title":     "",
-        "chart_category":  "General",
-        "narrative":       "",
-        "ui_actions":      [],
-    }
+    messages = [{"role": "system", "content": dynamic_system}]
+    for msg in (req.history or []):
+        messages.append({
+            "role": msg.role,
+            "content": msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
+        })
+    messages.append({"role": "user", "content": req.message})
 
     try:
-        graph  = get_graph()
-        result = await graph.ainvoke(initial_state)
+        raw = await call_groq(messages)
+        clean = raw.strip()
+        if clean.startswith("```"):
+            lines = clean.split("\n")
+            clean = "\n".join(lines[1:])
+            if clean.endswith("```"):
+                clean = clean[:-3]
+        parsed = json.loads(clean.strip())
+    except json.JSONDecodeError:
+        parsed = {"narrative": raw.strip(), "ui_actions": [], "fallback_sql": None}
     except Exception as e:
         err = str(e)
-        import traceback
-        tb = traceback.format_exc()
-        print(f"[chat] FULL ERROR:\n{tb}")
         if "rate limit" in err.lower() or "429" in err:
-            raise HTTPException(status_code=429, detail="Groq rate limit reached. Please wait a few seconds.")
-        # Return error as narrative instead of 500 so frontend shows it
-        return {
-            "narrative": f"I ran into an error: {err[:200]}. Please try again.",
-            "ui_actions": [],
-            "fallback_sql": "",
-            "error": err[:500],
-        }
+            raise HTTPException(status_code=429, detail="Groq rate limit reached. Please wait a few seconds and try again.")
+        raise HTTPException(status_code=500, detail=err)
 
-    narrative  = result.get("narrative", "Done.")
-    ui_actions = result.get("ui_actions", [])
+    # Sanitise narrative
+    narrative = parsed.get("narrative", "")
+    if "{" in narrative and "}" in narrative:
+        narrative = narrative.split("{")[0].strip()
+        if not narrative:
+            narrative = "Here is the data you requested."
 
-    # Persist — non-fatal if Supabase is down
-    try:
-        save_message("default", "user",      req.message,  [])
-        save_message("default", "assistant", narrative,     ui_actions)
-    except Exception as save_err:
-        print(f"[chat] save_message failed (non-fatal): {save_err}")
+    enriched_actions = []
+    for action in parsed.get("ui_actions", []):
+        if action.get("action") == "add_chart":
+            result = execute_chart_action(action)
+            enriched_actions.append(result or action)
+        elif action.get("action") == "modify_chart":
+            enriched_actions.append(execute_modify_action(action, req.board_context))
+        else:
+            enriched_actions.append(action)
 
-    # Ensure ui_actions is JSON-serializable
-    try:
-        import json as _json
-        _json.dumps(ui_actions)
-    except Exception:
-        ui_actions = []
+    response = {
+        "narrative":    narrative,
+        "ui_actions":   enriched_actions,
+        "fallback_sql": parsed.get("fallback_sql"),
+    }
 
-    try:
-        import json as _json
-        payload = {"narrative": narrative, "ui_actions": ui_actions, "fallback_sql": result.get("sql", "")}
-        _json.dumps(payload)  # validate serializable
-        return payload
-    except Exception as serial_err:
-        print(f"[chat] serialization error: {serial_err}")
-        return {"narrative": narrative, "ui_actions": [], "fallback_sql": ""}
+    save_message(req.session_id, "user",      {"text": req.message})
+    save_message(req.session_id, "assistant", response)
+    return response
 
-
-# ── History / Board endpoints ──────────────────────────────────────────────────
 
 @router.get("/history/{session_id}")
 def get_history(session_id: str):
-    msgs = load_messages("default", limit=40)
-    return {"session_id": session_id, "messages": msgs}
+    return {"session_id": session_id, "messages": load_history(session_id)}
+
 
 @router.delete("/history/{session_id}")
 def clear_history(session_id: str):
-    ok = clear_messages("default")
-    if not ok:
-        raise HTTPException(status_code=500, detail="Failed to clear history")
-    return {"message": "History cleared"}
-
-@router.get("/board")
-def get_board_default():
-    return {"board_state": load_board("default")}
-
-@router.get("/board/{user_id}")
-def get_board(user_id: str):
-    return {"board_state": load_board(user_id)}
-
-@router.post("/board")
-def post_board(req: BoardStateRequest):
-    user_id = req.user_id or "default"
-    ok = save_board(user_id, req.board_state)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Failed to save board")
-    return {"message": "Board saved"}
-
-@router.post("/board/save")
-def post_board_save(req: BoardStateRequest):
-    user_id = req.user_id or "default"
-    ok = save_board(user_id, req.board_state)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Failed to save board")
-    return {"message": "Board saved"}
-
-
-class RerenderRequest(BaseModel):
-    sql: str
-    chart_type: str
-    title: str = "Chart"
-    category: str = "General"
-    filters: Optional[dict] = {}
-
-@router.post("/rerender")
-def rerender_chart(req: RerenderRequest):
-    """Re-render a card with a different chart type and/or filters using stored SQL."""
-    from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
-    from api.filters import build_where_from_filters
-
-    # Inject filters into SQL — strip existing WHERE then insert fresh one
-    sql = req.sql
-    if req.filters:
-        where = build_where_from_filters(req.filters)
-        if where:
-            import re
-            # Remove any existing WHERE clause
-            sql = re.sub(
-                r'(?i)\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s+HAVING|\s+LIMIT|\s*$)',
-                ' ', sql, flags=re.DOTALL
-            ).strip()
-            # Find insertion point before GROUP BY / ORDER BY / end
-            sql_upper = sql.upper()
-            insert_at = len(sql)
-            for kw in ['GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT']:
-                idx = sql_upper.rfind(kw)
-                if idx != -1 and idx < insert_at:
-                    insert_at = idx
-            sql = sql[:insert_at].rstrip() + ' ' + where + ' ' + sql[insert_at:]
-
     try:
-        df = run_query(sql)
+        get_supabase().table("bi_chat_history").delete().eq("session_id", session_id).execute()
+        return {"message": "History cleared"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"SQL error: {e}")
-    if df.empty:
-        raise HTTPException(status_code=400, detail="Query returned no rows")
-    df   = _clean_df(df)
-    cols = df.columns.tolist()
-    meta = _infer_meta(cols)
-    meta["category"] = req.category
-    try:
-        chart_json = _build_chart(df, meta, req.chart_type)
-    except Exception:
-        chart_json = _build_chart(df, meta, "table")
-        req.chart_type = "table"
-    available = _smart_available_charts(cols, df, req.chart_type)
-    return {
-        "chart":            chart_json,
-        "chart_type":       req.chart_type,
-        "available_charts": available,
-        "row_count":        len(df),
-        "sql":              sql,   # return filtered SQL so flip panel shows it
-    }
+        raise HTTPException(status_code=500, detail=str(e))
