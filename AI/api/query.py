@@ -167,6 +167,11 @@ def _sort_time(df: pd.DataFrame, x_col: str) -> pd.DataFrame:
 
 
 def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
+    """Build a Plotly chart JSON string. Never produces an empty chart —
+    falls back to table if the requested type cannot be built."""
+    if df is None or df.empty:
+        print(f"[_build_chart] empty dataframe for chart_type={chart_type} — returning empty table")
+        return _build_chart(pd.DataFrame({"No Data": ["Query returned no results"]}), {}, "table")
     df = _clean_df(df)
     x_col = metric.get("x_col")
     y_col = metric.get("y_col")
@@ -379,7 +384,17 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
         z_col_h = metric.get("z_col") or (numeric_cols_h[0] if numeric_cols_h else df.columns[-1])
         month_order = ["January","February","March","April","May","June",
                        "July","August","September","October","November","December"]
-        pivot = df.pivot_table(index=y_col_h, columns=x_col_h, values=z_col_h, aggfunc="sum", fill_value=0)
+        try:
+            pivot = df.pivot_table(index=y_col_h, columns=x_col_h, values=z_col_h, aggfunc="sum", fill_value=0)
+        except Exception as pivot_err:
+            print(f"[heatmap] pivot failed: {pivot_err}, falling back to bar")
+            return _build_chart(df, metric, "bar")
+        if len(pivot.columns) < 2:
+            print(f"[heatmap] pivot has only {len(pivot.columns)} column(s) — likely a WHERE filter is limiting data. Falling back to bar.")
+            return _build_chart(df, metric, "bar")
+        if len(pivot) < 1:
+            print("[heatmap] pivot has no rows — falling back to bar")
+            return _build_chart(df, metric, "bar")
         # Reorder months if present
         ordered_cols = [m for m in month_order if m in pivot.columns]
         if ordered_cols:
@@ -445,9 +460,17 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
         if size_c and size_c in df.columns:
             raw_sizes = df[size_c].astype(float)
             sizes = ((raw_sizes - raw_sizes.min()) / (raw_sizes.max() - raw_sizes.min() + 1) * 30 + 10).tolist()
+        # Fallback to first two numeric columns if specified cols not in df
+        num_cols_s = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+        if x_s not in df.columns:
+            x_s = num_cols_s[0] if num_cols_s else df.columns[0]
+        if y_s not in df.columns:
+            y_s = num_cols_s[1] if len(num_cols_s) > 1 else (num_cols_s[0] if num_cols_s else df.columns[-1])
+        if label_c not in df.columns:
+            label_c = next((c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])), df.columns[0])
         fig = go.Figure(go.Scatter(
-            x=df[x_s] if x_s in df.columns else df.iloc[:, 0],
-            y=df[y_s] if y_s in df.columns else df.iloc[:, 1],
+            x=df[x_s],
+            y=df[y_s],
             mode="markers+text",
             text=df[label_c].tolist() if label_c in df.columns else None,
             textposition="top center",
