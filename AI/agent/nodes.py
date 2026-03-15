@@ -107,6 +107,7 @@ class AgentState(TypedDict):
     # Output
     narrative:       str
     ui_actions:      list[dict]
+    replace_card_id: Optional[str]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -165,46 +166,52 @@ def _infer_meta(columns: list[str]) -> dict:
 
 
 def _smart_available_charts(columns: list[str], df: pd.DataFrame, chart_type: str) -> list[str]:
-    """Return semantically appropriate chart types based on data shape."""
+    """Return semantically appropriate chart types based on data shape.
+    Always keeps all reasonable options visible — never removes the current type."""
     cols_lower = [c.lower() for c in columns]
     has_time   = any(c in TIME_COLS for c in cols_lower)
     has_cat    = any(c in CAT_COLS for c in cols_lower)
     has_group  = any(c in {"component_category","fleet_segment","maintenance_type",
-                           "workshop_type","failure_type"} for c in cols_lower)
-    has_stats  = any(c in {"q1","q3","median","mean","std"} for c in cols_lower)
+                           "workshop_type","failure_type","criticality_level","region"} for c in cols_lower)
+    has_stats  = any(c in {"q1","q3","median","mean","std","cost_q1","cost_median","cost_q3"} for c in cols_lower)
     n_numeric  = sum(1 for c in columns if str(df[c].dtype) in NUMERIC_TYPES)
+    n_cat      = sum(1 for c in cols_lower if c in CAT_COLS)
     n_rows     = len(df)
 
-    available = ["table"]  # always
+    available = ["table"]  # always available
 
     if has_stats:
-        available += ["boxplot", "histogram", "bar"]
+        # Distribution data — boxplot primary
+        available += ["boxplot", "bar", "table"]
 
     elif has_time:
+        # Time series — line and bar always
         available += ["line", "bar"]
-        # Heatmap available whenever there's a time col + any categorical col
         if has_cat or has_group:
-            available += ["heatmap"]
-        if has_group:
-            available += ["stacked_bar"]
+            available += ["heatmap", "stacked_bar"]
+        if n_numeric >= 2:
+            available += ["scatter"]
 
-    elif has_group and has_cat:
-        available += ["stacked_bar", "bar", "heatmap"]
-
-    elif n_numeric >= 2 and has_cat:
-        available += ["scatter", "bar"]
-
-    elif has_cat and n_numeric >= 1:
+    else:
+        # Category comparison — most chart types valid
         available += ["bar", "pareto", "waterfall"]
-        if n_rows <= 10:
-            available += ["pie", "treemap"]
-        else:
-            available += ["treemap"]
+        if n_rows <= 12:
+            available += ["pie"]
+        available += ["treemap"]
+        if has_group or n_cat >= 2:
+            available += ["stacked_bar", "heatmap"]
+        if n_numeric >= 2:
+            available += ["scatter"]
+
+    # histogram valid whenever we have numeric data
+    if n_numeric >= 1:
+        available += ["histogram"]
 
     # Always include the current chart_type so its icon never disappears
     if chart_type not in available:
         available.append(chart_type)
 
+    # Deduplicate preserving order
     return list(dict.fromkeys(available))
 
 
@@ -568,7 +575,7 @@ Return ONLY valid JSON, no markdown. Think carefully before choosing."""
                 return {**state, "narrative": question, "ui_actions": []}
 
             elif parsed.get("action") == "sql":
-                # Re-run with new SQL → adds a NEW card alongside the original
+                # Re-run with new SQL → adds NEW card alongside (user can compare and remove old)
                 new_sql   = parsed.get("sql", "")
                 new_type  = parsed.get("chart_type", "table")
                 new_title = parsed.get("title", f"{card_title} (modified)")
@@ -577,7 +584,8 @@ Return ONLY valid JSON, no markdown. Think carefully before choosing."""
                     "sql": new_sql, "chart_type": new_type,
                     "chart_title": new_title, "chart_category": "Cost",
                     "sql_error": "", "sql_retries": 0,
-                    "narrative": f"I've added a new card '{new_title}' alongside the original. You can remove it if it's not what you wanted.",
+                    "replace_card_id": None,
+                    "narrative": f"I've added '{new_title}' alongside. Remove the old one if you prefer this version.",
                     "intent": "visualise"
                 }
         except Exception as e:
@@ -689,8 +697,12 @@ Rules:
         print(f"[respond_node] filter suggestions failed: {e}")
         filter_suggestions = []
 
+    replace_id = state.get("replace_card_id")
+    action_type = "replace_chart" if replace_id else "add_chart"
+
     ui_actions = [{
-        "action":            "add_chart",
+        "action":            action_type,
+        "card_id":           replace_id,  # only used for replace_chart
         "metric_id":         state.get("chart_title","").lower().replace(" ","_"),
         "title":             state.get("chart_title","Query Result"),
         "chart_type":        state.get("chart_type","bar"),
