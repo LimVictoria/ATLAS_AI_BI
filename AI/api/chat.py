@@ -108,7 +108,7 @@ async def chat(req: ChatRequest):
         "user_message":    req.message,
         "history":         history,
         "board_context":   board_prompt,
-        "user_memory":     _load_user_memory(req.user_id or "default"),
+        "user_memory":     json.dumps(_load_user_memory(req.user_id or "default")),
         "intent":          "",
         "selected_card_id": None,
         "sql":             "",
