@@ -372,9 +372,11 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Heatmap ───────────────────────────────────────────────────────────────
     elif chart_type == "heatmap":
-        x_col_h = metric.get("x_col", "month_name")
-        y_col_h = metric.get("y_col", "brand")
-        z_col_h = metric.get("z_col", "total_cost")
+        x_col_h = metric.get("x_col") or next((c for c in df.columns if c.lower() in {"month_name","year_month","year_quarter","month"}), df.columns[1] if len(df.columns) > 1 else df.columns[0])
+        y_col_h = metric.get("y_col") or next((c for c in df.columns if c.lower() in {"brand","fleet_segment","component_category","workshop_type","region"}), df.columns[0])
+        # z_col: first numeric column that isn't x or y
+        numeric_cols_h = [c for c in df.columns if str(df[c].dtype) in {"int64","float64","int32","float32"} and c not in {x_col_h, y_col_h}]
+        z_col_h = metric.get("z_col") or (numeric_cols_h[0] if numeric_cols_h else df.columns[-1])
         month_order = ["January","February","March","April","May","June",
                        "July","August","September","October","November","December"]
         pivot = df.pivot_table(index=y_col_h, columns=x_col_h, values=z_col_h, aggfunc="sum", fill_value=0)
@@ -521,7 +523,13 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Stacked Bar ───────────────────────────────────────────────────────────
     elif chart_type == "stacked_bar":
-        group_col = metric.get("group_col", "component_category")
+        # Detect group_col: second categorical column if not specified
+        all_cat_cols_sb = [c for c in df.columns if c.lower() in
+                           {"brand","fleet_segment","component_category","maintenance_type",
+                            "workshop_type","region","failure_type","criticality_level",
+                            "month_name","year_quarter","plate_number","workshop_name","component_name"}]
+        default_group = all_cat_cols_sb[1] if len(all_cat_cols_sb) > 1 else (all_cat_cols_sb[0] if all_cat_cols_sb else df.columns[0])
+        group_col = metric.get("group_col") or default_group
         # Sort time axis if x is time-based
         if x_col and x_col.lower() in TIME_COLS_SET:
             df = _sort_time(df, x_col)
