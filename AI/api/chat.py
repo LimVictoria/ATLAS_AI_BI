@@ -4,6 +4,7 @@ ATLAS BI — /chat endpoint — LangGraph agent
 import os
 import json
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -152,11 +153,28 @@ async def chat(req: ChatRequest):
     narrative  = result.get("narrative", "Done.")
     ui_actions = result.get("ui_actions", [])
 
-    # Persist
-    save_message("default", "user",      req.message,  [])
-    save_message("default", "assistant", narrative,     ui_actions)
+    # Persist — non-fatal if Supabase is down
+    try:
+        save_message("default", "user",      req.message,  [])
+        save_message("default", "assistant", narrative,     ui_actions)
+    except Exception as save_err:
+        print(f"[chat] save_message failed (non-fatal): {save_err}")
 
-    return {"narrative": narrative, "ui_actions": ui_actions, "fallback_sql": result.get("sql")}
+    # Ensure ui_actions is JSON-serializable
+    try:
+        import json as _json
+        _json.dumps(ui_actions)
+    except Exception:
+        ui_actions = []
+
+    try:
+        import json as _json
+        payload = {"narrative": narrative, "ui_actions": ui_actions, "fallback_sql": result.get("sql", "")}
+        _json.dumps(payload)  # validate serializable
+        return payload
+    except Exception as serial_err:
+        print(f"[chat] serialization error: {serial_err}")
+        return {"narrative": narrative, "ui_actions": [], "fallback_sql": ""}
 
 
 # ── History / Board endpoints ──────────────────────────────────────────────────
