@@ -50,7 +50,8 @@ def build_board_context(board_context) -> str:
                     for row in rows
                 )
                 lines.append(f"    data_preview: {preview}")
-        except Exception:
+        except Exception as preview_err:
+            print(f"[board_context] preview failed for card {c.id}: {preview_err}")
             pass
 
     selected = [c for c in board_context.charts_on_canvas
@@ -97,7 +98,12 @@ class BoardStateRequest(BaseModel):
 
 @router.post("/")
 async def chat(req: ChatRequest):
-    board_prompt = build_board_context(req.board_context)
+    try:
+        board_prompt = build_board_context(req.board_context)
+    except Exception as e:
+        import traceback
+        print(f"[chat] build_board_context failed: {traceback.format_exc()}")
+        board_prompt = "\nBOARD_CONTEXT: Error reading board context.\n"
 
     history = [
         {"role": m.role, "content": m.content if isinstance(m.content, str) else json.dumps(m.content)}
