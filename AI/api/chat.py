@@ -162,13 +162,6 @@ async def chat(req: ChatRequest):
     except Exception as save_err:
         print(f"[chat] save_message failed (non-fatal): {save_err}")
 
-    # Ensure ui_actions is JSON-serializable
-    try:
-        import json as _json
-        _json.dumps(ui_actions)
-    except Exception:
-        ui_actions = []
-
     try:
         import json as _json, math
 
@@ -206,12 +199,15 @@ async def chat(req: ChatRequest):
             "fallback_sql": result.get("sql", "") or ""
         })
 
-        # Final validation — if still fails, strip ui_actions
-        try:
-            _json.dumps(payload)
-        except Exception as e:
-            print(f"[chat] payload still invalid after sanitize: {e} — stripping ui_actions")
-            payload["ui_actions"] = []
+        # Per-action validation — only skip truly unsalvageable actions, never wipe all
+        safe_actions = []
+        for action in payload.get("ui_actions", []):
+            try:
+                _json.dumps(action)
+                safe_actions.append(action)
+            except Exception as e:
+                print(f"[chat] skipping unsalvageable action (type={action.get('action','?')}): {e}")
+        payload["ui_actions"] = safe_actions
 
         return payload
     except Exception as serial_err:
@@ -256,6 +252,37 @@ def post_board_save(req: BoardStateRequest):
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to save board")
     return {"message": "Board saved"}
+
+
+@router.get("/data/schema")
+def get_schema():
+    """Return the current dynamic schema guide."""
+    try:
+        from db.duckdb_session import get_schema_guide, get_table_names
+        return {"schema": get_schema_guide(), "tables": get_table_names()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/data/reload")
+def reload_data():
+    """Force reload all data files and regenerate schema guide."""
+    try:
+        from db.duckdb_session import reload_data as _reload
+        result = _reload()
+        return {"status": "reloaded", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/data/warnings")
+def get_dq_warnings():
+    """Return data quality warnings from the last data load."""
+    try:
+        from db.duckdb_session import get_dq_warnings
+        return {"warnings": get_dq_warnings()}
+    except Exception as e:
+        return {"warnings": []}
 
 
 class RerenderRequest(BaseModel):
