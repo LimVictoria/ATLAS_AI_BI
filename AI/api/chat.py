@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from metrics import METRICS, TIME_SHORTCUTS, get_metrics_index
 from db.supabase import get_supabase
 from api.query import QueryRequest, run_metric
 
