@@ -130,11 +130,18 @@ async def chat(req: ChatRequest):
         result = await graph.ainvoke(initial_state)
     except Exception as e:
         err = str(e)
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[chat] FULL ERROR:\n{tb}")
         if "rate limit" in err.lower() or "429" in err:
             raise HTTPException(status_code=429, detail="Groq rate limit reached. Please wait a few seconds.")
-        import traceback
-        print(f"[chat] Graph error: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=err)
+        # Return error as narrative instead of 500 so frontend shows it
+        return {
+            "narrative": f"I ran into an error: {err[:200]}. Please try again.",
+            "ui_actions": [],
+            "fallback_sql": "",
+            "error": err[:500],
+        }
 
     narrative  = result.get("narrative", "Done.")
     ui_actions = result.get("ui_actions", [])
@@ -161,14 +168,24 @@ def clear_history(session_id: str):
     return {"message": "History cleared"}
 
 @router.get("/board")
+def get_board_default():
+    return {"board_state": load_board("default")}
+
 @router.get("/board/{user_id}")
-def get_board(user_id: str = "default"):
+def get_board(user_id: str):
     return {"board_state": load_board(user_id)}
 
 @router.post("/board")
-@router.post("/board/save")
 def post_board(req: BoardStateRequest):
-    user_id = getattr(req, "user_id", "default") or "default"
+    user_id = req.user_id or "default"
+    ok = save_board(user_id, req.board_state)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to save board")
+    return {"message": "Board saved"}
+
+@router.post("/board/save")
+def post_board_save(req: BoardStateRequest):
+    user_id = req.user_id or "default"
     ok = save_board(user_id, req.board_state)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to save board")
