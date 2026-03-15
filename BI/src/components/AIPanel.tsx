@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Send, Loader, Sparkles } from "lucide-react"
 import { v4 as uuid } from "uuid"
 import { useDashboardStore } from "@/store/dashboard"
-import { sendChat, clearChatHistory } from "@/utils/api"
+import { sendChat, clearChatHistory, getDQWarnings } from "@/utils/api"
 import { processUIActions } from "@/hooks/useUIActions"
 
 const SUGGESTIONS = [
@@ -33,6 +33,21 @@ export default function AIPanel() {
   useEffect(() => {
     loadBoardFromServer()
     loadMessagesFromServer()
+    // Load data quality warnings once per session
+    getDQWarnings().then(data => {
+      const warnings: string[] = data?.warnings || []
+      if (warnings.length > 0) {
+        addMessage({
+          id: "dq-warning",
+          role: "system",
+          text: `⚠️ **Data Quality Notice**
+${warnings.map((w: string) => `· ${w}`).join("
+")}`,
+          timestamp: new Date(),
+          loading: false,
+        })
+      }
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -214,6 +229,19 @@ export default function AIPanel() {
                     }} />
                   ))}
                 </div>
+              </div>
+            ) : msg.role === "system" ? (
+              <div style={{
+                padding: "10px 14px",
+                background: "linear-gradient(135deg, #FEF9C3, #FEF3C7)",
+                color: "#78350F",
+                borderRadius: 10,
+                border: "1px solid #FDE68A",
+                fontSize: 12, lineHeight: 1.7, whiteSpace: "pre-wrap",
+                boxShadow: "0 1px 4px rgba(251,191,36,0.15)",
+                maxWidth: "100%",
+              }}>
+                {msg.text}
               </div>
             ) : (
               <div style={{
