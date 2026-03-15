@@ -169,13 +169,53 @@ async def chat(req: ChatRequest):
         ui_actions = []
 
     try:
-        import json as _json
-        payload = {"narrative": narrative, "ui_actions": ui_actions, "fallback_sql": result.get("sql", "")}
-        _json.dumps(payload)  # validate serializable
+        import json as _json, math
+
+        def _deep_sanitize(obj, depth=0):
+            """Recursively sanitize any value to be JSON-safe. Handles NaN, Inf,
+            non-serializable types, circular refs (depth limit), and bytes."""
+            if depth > 20:
+                return str(obj)
+            if obj is None:
+                return None
+            if isinstance(obj, bool):
+                return obj
+            if isinstance(obj, float):
+                if math.isnan(obj) or math.isinf(obj):
+                    return 0
+                return obj
+            if isinstance(obj, (int, str)):
+                return obj
+            if isinstance(obj, dict):
+                return {str(k): _deep_sanitize(v, depth+1) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_deep_sanitize(v, depth+1) for v in obj]
+            if isinstance(obj, bytes):
+                return obj.decode("utf-8", errors="replace")
+            # Unknown type — convert to string
+            try:
+                _json.dumps(obj)
+                return obj
+            except Exception:
+                return str(obj)
+
+        payload = _deep_sanitize({
+            "narrative": str(narrative) if narrative else "Done.",
+            "ui_actions": ui_actions if isinstance(ui_actions, list) else [],
+            "fallback_sql": result.get("sql", "") or ""
+        })
+
+        # Final validation — if still fails, strip ui_actions
+        try:
+            _json.dumps(payload)
+        except Exception as e:
+            print(f"[chat] payload still invalid after sanitize: {e} — stripping ui_actions")
+            payload["ui_actions"] = []
+
         return payload
     except Exception as serial_err:
-        print(f"[chat] serialization error: {serial_err}")
-        return {"narrative": narrative, "ui_actions": [], "fallback_sql": ""}
+        print(f"[chat] serialization fatal: {serial_err}")
+        return {"narrative": str(narrative) if narrative else "Done.", "ui_actions": [], "fallback_sql": ""}
 
 
 # ── History / Board endpoints ──────────────────────────────────────────────────
@@ -266,10 +306,16 @@ def rerender_chart(req: RerenderRequest):
         chart_json = _build_chart(df, meta, "table")
         req.chart_type = "table"
     available = _smart_available_charts(cols, df, req.chart_type)
+    import re as _re
+    # Sanitize chart_json — replace any NaN/Inf Plotly may have embedded
+    chart_json = _re.sub(r'\bNaN\b', '0', chart_json)
+    chart_json = _re.sub(r'\bInfinity\b', '0', chart_json)
+    chart_json = _re.sub(r'-Infinity', '0', chart_json)
+
     return {
         "chart":            chart_json,
         "chart_type":       req.chart_type,
         "available_charts": available,
         "row_count":        len(df),
-        "sql":              sql,   # return filtered SQL so flip panel shows it
+        "sql":              sql,
     }
