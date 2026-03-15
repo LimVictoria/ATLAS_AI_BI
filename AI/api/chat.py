@@ -89,6 +89,7 @@ class ChatRequest(BaseModel):
     message: str
     history: Optional[list[ChatMessage]] = []
     board_context: Optional[BoardContext] = None
+    user_id: Optional[str] = "default"
 
 class BoardStateRequest(BaseModel):
     board_state: list
@@ -115,7 +116,7 @@ async def chat(req: ChatRequest):
         "user_message":    req.message,
         "history":         history,
         "board_context":   board_prompt,
-        "user_memory":     json.dumps(_load_user_memory(req.user_id or "default")),
+        "user_memory":     json.dumps(_load_user_memory(getattr(req, "user_id", None) or "default")),
         "intent":          "",
         "selected_card_id": None,
         "sql":             "",
