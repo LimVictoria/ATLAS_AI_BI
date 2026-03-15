@@ -111,6 +111,23 @@ class AgentState(TypedDict):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+def _safe_rows(df) -> list[dict]:
+    """Convert DataFrame rows to JSON-safe dicts — handles NaN, Inf, None."""
+    import math
+    result = []
+    for row in df.to_dict(orient="records"):
+        safe = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                safe[k] = 0
+            elif v is None:
+                safe[k] = ""
+            else:
+                safe[k] = v
+        result.append(safe)
+    return result
+
+
 def _infer_meta(columns: list[str]) -> dict:
     """Infer x_col, y_col, group_col from column names."""
     time_found, cat_found, num_found, group_found = [], [], [], []
@@ -440,7 +457,7 @@ async def chart_node(state: AgentState) -> AgentState:
     return {
         **state,
         "sql_error":       "",
-        "df_rows":         df.head(5).to_dict(orient="records"),
+        "df_rows":         _safe_rows(df.head(5)),
         "df_columns":      cols,
         "chart_json":      chart_json,
         "chart_type":      chart_type,
@@ -624,9 +641,13 @@ Keep it concise and friendly. Format as plain text, no JSON."""
     narrative = state.get("narrative", "")
     if not narrative or len(narrative) < 10:
         preview = state.get("df_rows", [])[:3]
+        try:
+            preview_str = json.dumps(preview)
+        except Exception:
+            preview_str = str(preview[:2])
         system  = f"""You are ATLAS. Write a 1-2 sentence insight about this data for a fleet manager.
 Use specific numbers from the preview. Plain English only — no JSON, no markdown.
-Data preview: {json.dumps(preview)}
+Data preview: {preview_str}
 Chart: {state.get("chart_title","")} ({state.get("chart_type","")})"""
         messages = [{"role": "system", "content": system}, {"role": "user", "content": state["user_message"]}]
         try:
