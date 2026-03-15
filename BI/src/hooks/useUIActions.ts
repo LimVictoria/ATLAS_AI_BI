@@ -13,20 +13,15 @@ export async function processUIActions(actions: any[]) {
         console.error("[useUIActions] add_chart action missing chart_data:", action)
         continue
       }
-      // Support both old format (raw.chart = plotly json) and new Path B format (raw = full result)
-      const chartData = raw.chart !== undefined ? raw.chart : raw
       addChart({
         id: uuid(),
-        metric_id: action.metric_id || raw.metric_id || "dynamic",
-        title: action.title || raw.title || action.metric_id || "Query Result",
-        category: raw.category || action.category || "General",
+        metric_id: action.metric_id,
+        title: action.title || raw.title || action.metric_id,
+        category: raw.category || "General",
         chart_type: raw.chart_type || action.chart_type || "bar",
-        chart_data: raw.chart !== undefined ? raw.chart : raw,
+        chart_data: raw.chart,
         filters: action.filters || {},
         available_charts: raw.available_charts || ["bar", "line", "table"],
-        sql: raw.sql || action.sql || "",
-        base_sql: raw.sql || action.sql || "",
-        filter_suggestions: action.filter_suggestions || [],
         selected: false,
         loading: false,
         x: 0, y: 0, w: 6, h: 6,
@@ -34,12 +29,6 @@ export async function processUIActions(actions: any[]) {
     }
 
     // ── Modify existing card (chart type or filters) ───────────────────────
-    if (action.action === "show_filter") {
-      const { updateChart } = useDashboardStore.getState()
-      if (action.card_id) updateChart(action.card_id, { showFilters: true })
-      continue
-    }
-
     if (action.action === "modify_chart") {
       const { charts: currentCharts } = useDashboardStore.getState()
       const cardId = action.card_id
@@ -48,25 +37,19 @@ export async function processUIActions(actions: any[]) {
       const card = currentCharts.find(c => c.id === cardId)
       if (!card) continue
 
+      const updates: Record<string, any> = {}
+
       if (action.chart_type && action.chart_type !== card.chart_type) {
+        // Re-fetch chart data with new chart type
+        const { runMetric } = await import("@/utils/api")
         updateChart(cardId, { loading: true })
         try {
-          // Path B: card has SQL stored — re-render via /chat/rerender
-          // Path A: card has metric_id — use /query/
-          if (card.sql) {
-            const { rerenderChart } = await import("@/utils/api")
-            const result = await rerenderChart(card.sql, action.chart_type, card.title, card.category)
-            updateChart(cardId, {
-              chart_type: action.chart_type,
-              chart_data: result.chart,
-              available_charts: result.available_charts || card.available_charts,
-              loading: false,
-            })
-          } else {
-            // No SQL stored — card is from old session, cannot re-render
-            console.warn("[useUIActions] card has no sql, cannot switch chart type:", card.metric_id)
-            updateChart(cardId, { loading: false })
-          }
+          const result = await runMetric(card.metric_id, action.chart_type, card.filters)
+          updateChart(cardId, {
+            chart_type: action.chart_type,
+            chart_data: result.chart,
+            loading: false,
+          })
         } catch {
           updateChart(cardId, { loading: false })
         }
@@ -74,16 +57,11 @@ export async function processUIActions(actions: any[]) {
 
       if (action.filters) {
         const newFilters = { ...card.filters, ...action.filters }
+        const { runMetric } = await import("@/utils/api")
         updateChart(cardId, { loading: true, filters: newFilters })
         try {
-          if (card.sql) {
-            const { rerenderChart } = await import("@/utils/api")
-            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
-            updateChart(cardId, { chart_data: result.chart, filters: newFilters, loading: false })
-          } else {
-            console.warn("[useUIActions] card has no sql, cannot apply filter:", card.metric_id)
-            updateChart(cardId, { loading: false })
-          }
+          const result = await runMetric(card.metric_id, card.chart_type, newFilters)
+          updateChart(cardId, { chart_data: result.chart, loading: false })
         } catch {
           updateChart(cardId, { loading: false })
         }
