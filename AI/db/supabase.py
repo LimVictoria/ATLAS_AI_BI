@@ -23,15 +23,17 @@ def get_supabase() -> Client:
 
 # ── Board persistence ──────────────────────────────────────────────────────────
 
-def save_board(board_state: list, user_id: str = DEFAULT_USER) -> None:
+def save_board(board_state: list, user_id: str = DEFAULT_USER) -> bool:
     try:
         get_supabase().table("bi_board").upsert({
             "user_id":     user_id,
             "board_state": board_state,
             "updated_at":  datetime.utcnow().isoformat(),
         }, on_conflict="user_id").execute()
+        return True
     except Exception as e:
         print(f"[Supabase] save_board failed: {e}")
+        return False
 
 
 def load_board(user_id: str = DEFAULT_USER) -> list:
@@ -75,12 +77,14 @@ def load_messages(user_id: str = DEFAULT_USER, limit: int = 40) -> list[dict]:
         return []
 
 
-def clear_messages(user_id: str = DEFAULT_USER) -> None:
+def clear_messages(user_id: str = DEFAULT_USER) -> bool:
     try:
         get_supabase().table("bi_chat_history") \
             .delete().eq("user_id", user_id).execute()
+        return True
     except Exception as e:
         print(f"[Supabase] clear_messages failed: {e}")
+        return False
 
 
 # ── User memory persistence ────────────────────────────────────────────────────
