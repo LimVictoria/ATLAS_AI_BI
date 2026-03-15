@@ -430,8 +430,8 @@ export default function ChartCard({ card }: Props) {
         sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
       }
       if (!sourceSql) {
-        // No SQL at all — just update chart_type optimistically and reload chart_data
-        updateChart(card.id, { chart_type: type as ChartType, loading: false })
+        // No SQL — cannot rerender, silently do nothing (icon stays on current type)
+        updateChart(card.id, { loading: false })
         return
       }
       const { rerenderChart } = await import("@/utils/api")
@@ -532,7 +532,7 @@ export default function ChartCard({ card }: Props) {
               {card.available_charts?.map(t => (
                 <GlassBtn key={t} title={t.charAt(0).toUpperCase() + t.slice(1).replace("_", " ")}
                   onClick={() => switchChartType(t)}
-                  active={card.chart_type === t} activeColor={cat.color} activeGlass={cat.glass}>
+                  active={card.chart_type === t && (plotData?.data?.[0]?.type !== "table" || t === "table")} activeColor={cat.color} activeGlass={cat.glass}>
                   {CHART_ICONS[t] ?? <BarChart2 size={12} />}
                 </GlassBtn>
               ))}
