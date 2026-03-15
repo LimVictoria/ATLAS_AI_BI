@@ -17,61 +17,20 @@ from db.duckdb_session import run_query
 from api.query import _build_chart, _to_json, _clean_df
 
 
-# ── Schema guide ───────────────────────────────────────────────────────────────
+# ── Schema guide — dynamic, generated from actual data ────────────────────────
 
-SCHEMA_GUIDE = """
-DATABASE VIEW: v_maintenance_full
-All queries run against this single view. Use DuckDB SQL syntax.
+def _get_schema_guide() -> str:
+    """Get the current schema guide, generated dynamically from loaded data."""
+    try:
+        from db.duckdb_session import get_schema_guide
+        return get_schema_guide()
+    except Exception as e:
+        print(f"[nodes] schema guide fallback: {e}")
+        return "SCHEMA: Data loaded in DuckDB. Query tables using SQL."
 
-COLUMNS (exact names — do NOT invent column names):
-  plate_number       TEXT    — unique vehicle identifier
-  brand              TEXT    — Scania, Volvo, Mercedes-Benz, MAN, Hino
-  fleet_segment      TEXT    — Heavy, Medium, Light
-  year_manufactured  INTEGER
-  truck_age_years    INTEGER
-  year               INTEGER — calendar year (2020-2024). Use this directly, NOT strftime()
-  month              INTEGER — month number 1-12. Use this directly, NOT strftime()
-  year_month         TEXT    — e.g. "2024-03". Use for time series x-axis
-  month_name         TEXT    — e.g. "March"
-  year_quarter       TEXT    — e.g. "2024-Q1"
-  maintenance_type   TEXT    — Scheduled, Unscheduled
-  component_category TEXT    — Engine, Transmission, Brakes, Electrical, Tyres, Body, Suspension, Cooling
-  component_name     TEXT
-  failure_type       TEXT
-  criticality_level  TEXT    — Critical, High, Medium, Low
-  workshop_name      TEXT
-  workshop_type      TEXT    — Authorised, Independent
-  region             TEXT
-  total_cost_myr     FLOAT
-  parts_cost_myr     FLOAT
-  labour_cost_myr    FLOAT
-  downtime_days      FLOAT
-  is_repeat_failure  BOOLEAN
 
-DATE RANGE: 2020-2024. "This month"=Dec 2024. "This year"=2024. "Last year"=2023.
-
-CRITICAL SQL RULES:
-- NEVER use strftime() or service_date — the view already has year, month, year_month pre-extracted
-- Use year and month columns directly: WHERE year = 2023, WHERE month IN (1,2,3)
-- For year pivots: ROUND(SUM(CASE WHEN year = 2020 THEN total_cost_myr END), 2) AS cost_2020
-- Use ROUND(value,2) for monetary values
-- Use NULLIF(denominator,0) to avoid division by zero
-- GROUP BY all non-aggregated SELECT columns
-- Time series: always include year_month in SELECT (not just month or year alone), ORDER BY year_month ASC
-- Category comparisons: ORDER BY main measure DESC
-- No LIMIT unless user asks for top-N
-- ALWAYS include fleet_segment, brand or other filter columns in WHERE if they are active filters
-
-YEAR PIVOT EXAMPLE (for "show cost by brand with columns per year"):
-SELECT brand,
-       ROUND(SUM(CASE WHEN year = 2020 THEN total_cost_myr ELSE 0 END), 2) AS cost_2020,
-       ROUND(SUM(CASE WHEN year = 2021 THEN total_cost_myr ELSE 0 END), 2) AS cost_2021,
-       ROUND(SUM(CASE WHEN year = 2022 THEN total_cost_myr ELSE 0 END), 2) AS cost_2022,
-       ROUND(SUM(CASE WHEN year = 2023 THEN total_cost_myr ELSE 0 END), 2) AS cost_2023
-FROM v_maintenance_full
-GROUP BY brand
-ORDER BY (cost_2020 + cost_2021 + cost_2022 + cost_2023) DESC
-"""
+# Alias for backward compat
+SCHEMA_GUIDE = property(_get_schema_guide)  # not used directly — always call _get_schema_guide()
 
 TIME_COLS   = {"year_month","month_name","year_quarter","service_date","year","month"}
 CAT_COLS    = {"brand","plate_number","vehicle_id","workshop_name","component_name",
@@ -166,52 +125,62 @@ def _infer_meta(columns: list[str]) -> dict:
 
 
 def _smart_available_charts(columns: list[str], df: pd.DataFrame, chart_type: str) -> list[str]:
-    """Return semantically appropriate chart types based on data shape.
-    Always keeps all reasonable options visible — never removes the current type."""
-    cols_lower = [c.lower() for c in columns]
-    has_time   = any(c in TIME_COLS for c in cols_lower)
-    has_cat    = any(c in CAT_COLS for c in cols_lower)
-    has_group  = any(c in {"component_category","fleet_segment","maintenance_type",
-                           "workshop_type","failure_type","criticality_level","region"} for c in cols_lower)
-    has_stats  = any(c in {"q1","q3","median","mean","std","cost_q1","cost_median","cost_q3"} for c in cols_lower)
-    n_numeric  = sum(1 for c in columns if str(df[c].dtype) in NUMERIC_TYPES)
-    n_cat      = sum(1 for c in cols_lower if c in CAT_COLS)
-    n_rows     = len(df)
+    """Return valid chart types based on actual data shape.
+    Uses dtype analysis — not hardcoded column names — so it works on any dataset.
+    Table is always available. Current chart_type is always preserved."""
 
-    available = ["table"]  # always available
+    # Analyse actual dtypes
+    n_rows    = len(df)
+    num_cols  = [c for c in columns if pd.api.types.is_numeric_dtype(df[c])]
+    cat_cols  = [c for c in columns if not pd.api.types.is_numeric_dtype(df[c])
+                 and not pd.api.types.is_datetime64_any_dtype(df[c])]
+    time_cols = [c for c in columns if pd.api.types.is_datetime64_any_dtype(df[c])]
+
+    # Also treat string columns that look like time (year_month, year_quarter etc)
+    for c in columns:
+        cl = c.lower()
+        if cl in TIME_COLS and c not in time_cols:
+            time_cols.append(c)
+
+    n_num  = len(num_cols)
+    n_cat  = len(cat_cols)
+    n_time = len(time_cols)
+
+    # Check for stat columns (boxplot indicator)
+    stat_names = {"q1","q3","median","mean","std","min","max",
+                  "cost_q1","cost_median","cost_q3","cost_min","cost_max","cost_mean"}
+    has_stats = any(c.lower() in stat_names for c in columns)
+
+    # Check cardinality of categorical cols for pie eligibility
+    max_cat_unique = max((df[c].nunique() for c in cat_cols), default=0)
+
+    available = ["table"]  # always
 
     if has_stats:
-        # Distribution data — boxplot primary
-        available += ["boxplot", "bar", "table"]
+        available += ["boxplot", "bar"]
 
-    elif has_time:
-        # Time series — line and bar always
-        available += ["line", "bar"]
-        if has_cat or has_group:
-            available += ["heatmap", "stacked_bar"]
-        if n_numeric >= 2:
-            available += ["scatter"]
-
-    else:
-        # Category comparison — most chart types valid
+    if n_num >= 1 and n_cat >= 1:
         available += ["bar", "pareto", "waterfall"]
-        if n_rows <= 12:
+        if max_cat_unique <= 12:
             available += ["pie"]
         available += ["treemap"]
-        if has_group or n_cat >= 2:
-            available += ["stacked_bar", "heatmap"]
-        if n_numeric >= 2:
-            available += ["scatter"]
 
-    # histogram valid whenever we have numeric data
-    if n_numeric >= 1:
+    if n_time >= 1 and n_num >= 1:
+        available += ["line", "bar"]
+
+    if n_cat >= 2 and n_num >= 1:
+        available += ["stacked_bar", "heatmap"]
+
+    if n_num >= 2:
+        available += ["scatter"]
+
+    if n_num >= 1:
         available += ["histogram"]
 
-    # Always include the current chart_type so its icon never disappears
-    if chart_type not in available:
+    # Always keep current chart type visible
+    if chart_type and chart_type not in available:
         available.append(chart_type)
 
-    # Deduplicate preserving order
     return list(dict.fromkeys(available))
 
 
@@ -334,7 +303,7 @@ async def sql_node(state: AgentState) -> AgentState:
 
     system = f"""You are a DuckDB SQL expert for a fleet maintenance BI platform.
 
-{SCHEMA_GUIDE}
+{_get_schema_guide()}
 
 {state.get("board_context", "")}{memory_hint}
 
@@ -531,7 +500,7 @@ SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}
 
 {board}
 
-{SCHEMA_GUIDE}
+{_get_schema_guide()}
 
 The user wants to modify this card. Classify their request into exactly one of these:
 
