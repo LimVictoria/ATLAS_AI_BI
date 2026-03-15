@@ -422,21 +422,20 @@ export default function ChartCard({ card }: Props) {
 
   const switchChartType = async (type: string) => {
     if (type === card.chart_type) return
-    if (!card.sql) {
-      // Old card with no SQL — ask user to regenerate
-      alert("This chart was created in a previous session. Ask the AI to regenerate it, then you can switch chart types.")
-      return
-    }
     updateChart(card.id, { loading: true })
     try {
-      const { rerenderChart } = await import("@/utils/api")
-      // Use base_sql so switching chart type preserves active filters correctly
+      // Build source SQL — use stored sql, strip WHERE to get base, or ask backend to rerender
       let sourceSql = card.base_sql || ""
       if (!sourceSql && card.sql) {
         sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
       }
-      const result = await rerenderChart(sourceSql || card.sql, type, card.title, card.category, card.filters || {})
-      // Use result.chart_type in case backend fell back (e.g. bar → table on error)
+      if (!sourceSql) {
+        // No SQL at all — just update chart_type optimistically and reload chart_data
+        updateChart(card.id, { chart_type: type as ChartType, loading: false })
+        return
+      }
+      const { rerenderChart } = await import("@/utils/api")
+      const result = await rerenderChart(sourceSql, type, card.title, card.category, card.filters || {})
       updateChart(card.id, {
         chart_type: (result.chart_type || type) as ChartType,
         chart_data: result.chart,
