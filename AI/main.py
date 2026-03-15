@@ -26,21 +26,30 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Fallback: ensure CORS headers are present on ALL responses including 500s
+# Fallback middleware — log ALL errors and ensure CORS headers
 @app.middleware("http")
 async def add_cors_fallback(request: Request, call_next):
+    import traceback as tb
     try:
         response = await call_next(request)
+        origin = request.headers.get("origin", "*")
+        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
     except Exception as e:
-        response = JSONResponse(
+        err = tb.format_exc()
+        print(f"[middleware] UNHANDLED ERROR on {request.method} {request.url.path}:\n{err}")
+        origin = request.headers.get("origin", "*")
+        return JSONResponse(
             status_code=500,
-            content={"detail": f"Internal server error: {str(e)}"}
+            content={"detail": str(e)},
+            headers={
+                "Access-Control-Allow-Origin": origin or "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "*",
+            }
         )
-    origin = request.headers.get("origin", "*")
-    response.headers["Access-Control-Allow-Origin"] = origin or "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
 
 app.include_router(query_router)
 app.include_router(filters_router)
