@@ -61,15 +61,59 @@ def _palette(category: str, n: int) -> list:
 
 
 def _to_json(fig) -> str:
-    return fig.to_json()
+    """Serialize Plotly figure to JSON, sanitizing any NaN/Inf values."""
+    import math, re
+    raw = fig.to_json()
+    # Replace JSON-invalid NaN/Infinity produced by Plotly
+    raw = re.sub(r'\bNaN\b', '0', raw)
+    raw = re.sub(r'\bInfinity\b', '0', raw)
+    raw = re.sub(r'\b-Infinity\b', '0', raw)
+    return raw
+
+
+def _sanitize_value(v):
+    """Convert any non-JSON-safe value to a safe equivalent."""
+    import math
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return 0
+    return v
 
 
 def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Fix NaN in string columns — DuckDB sometimes returns nulls as float NaN"""
+    """Sanitize all columns — handles NaN, Inf, None, mixed types from DuckDB."""
+    import numpy as np
+    df = df.copy()
     for col in df.columns:
         if df[col].dtype == object:
             df[col] = df[col].fillna("—").astype(str)
+        elif pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = df[col].replace([np.inf, -np.inf], np.nan).fillna(0)
+        else:
+            # Any other dtype (bool, datetime, etc.) — convert to string safely
+            try:
+                df[col] = df[col].fillna("—").astype(str)
+            except Exception:
+                df[col] = df[col].astype(str)
     return df
+
+
+def _safe_to_dict(df: pd.DataFrame) -> list[dict]:
+    """Convert DataFrame to records safely — handles any remaining non-serializable values."""
+    import math
+    records = df.to_dict(orient="records")
+    safe = []
+    for row in records:
+        safe_row = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                safe_row[k] = 0
+            elif v is None:
+                safe_row[k] = ""
+            else:
+                safe_row[k] = v
+        safe.append(safe_row)
+    return safe
 
 
 TIME_COLS_SET = {"year_month","month_name","year_quarter","year","month","service_date"}
@@ -580,7 +624,7 @@ def run_sql_query(req: QueryRequest):
         "category":         req.category,
         "sql":              req.sql,
         "row_count":        len(df),
-        "summary":          df.head(5).to_dict(orient="records"),
+        "summary":          _safe_to_dict(df.head(5)),
         "available_charts": available,
     }
 
