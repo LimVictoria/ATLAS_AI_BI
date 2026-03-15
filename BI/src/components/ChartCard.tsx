@@ -132,7 +132,7 @@ function GlassBtn({ onClick, active, activeColor, activeGlass, title, children }
       >{children}</button>
       {title && showTip && (
         <div style={{
-          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
+          position: "absolute", top: "calc(100% + 6px)", left: "50%",
           transform: "translateX(-50%)",
           background: "#1E293B", color: "#F8FAFC",
           fontSize: 10, fontWeight: 500, padding: "3px 8px",
