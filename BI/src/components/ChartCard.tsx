@@ -34,15 +34,17 @@ const CHART_ICONS: Record<string, React.ReactNode> = {
 // ── Dynamic filter options — fetched from backend, reflects actual data ──────────
 
 // Fixed enumerations that never change regardless of data
+// Only quarter is truly fixed — all other options come from actual data via /filters/ endpoint
 const FIXED_OPTIONS: Record<string, string[]> = {
-  quarter:           ["1", "2", "3", "4"],
-  criticality_level: ["Critical", "High", "Medium", "Low"],
-  maintenance_type:  ["Scheduled", "Unscheduled"],
+  quarter: ["1", "2", "3", "4"],
 }
 
 // Singleton cache — fetched once per session
 let _filterCache: Record<string, string[]> | null = null
 let _filterFetchPromise: Promise<void> | null = null
+
+// Full filter metadata — options + labels from backend
+let _filterMeta: Record<string, { options: string[]; label: string }> | null = null
 
 async function loadFilterOptions(): Promise<Record<string, string[]>> {
   if (_filterCache) return _filterCache
@@ -52,36 +54,31 @@ async function loadFilterOptions(): Promise<Record<string, string[]>> {
       const { getFilters } = await import("@/utils/api")
       const data = await getFilters()
       const result: Record<string, string[]> = { ...FIXED_OPTIONS }
+      const meta: Record<string, { options: string[]; label: string }> = {}
+
+      // Always include quarter
+      meta["quarter"] = { options: ["1","2","3","4"], label: "Quarter" }
+
       Object.entries(data.filters || {}).forEach(([key, cfg]: [string, any]) => {
-        if (!FIXED_OPTIONS[key] && cfg.options?.length > 0) {
+        if (cfg.options?.length > 0) {
           result[key] = cfg.options
+          meta[key] = { options: cfg.options, label: cfg.label || key.replace(/_/g, " ") }
         }
       })
       _filterCache = result
-    } catch {
-      // Fallback to sensible defaults if fetch fails
-      _filterCache = {
-        ...FIXED_OPTIONS,
-        brand:            ["Scania", "Volvo", "Mercedes-Benz", "MAN", "Hino"],
-        year:             ["2020", "2021", "2022", "2023", "2024"],
-        fleet_segment:    ["Heavy", "Medium", "Light"],
-        workshop_type:    ["Authorised", "Independent"],
-        region:           [],
-        component_category: [],
-      }
+      _filterMeta = meta
+    } catch (err) {
+      console.warn("[Filters] fetch failed, using empty filters:", err)
+      _filterCache = { ...FIXED_OPTIONS }
+      _filterMeta = { quarter: { options: ["1","2","3","4"], label: "Quarter" } }
     }
   })()
   await _filterFetchPromise
   return _filterCache!
 }
 
-// Filter display labels
-const FILTER_LABELS: Record<string, string> = {
-  brand: "Brand", year: "Year", month: "Month", quarter: "Quarter",
-  fleet_segment: "Fleet Segment", maintenance_type: "Maintenance Type",
-  criticality_level: "Criticality Level", workshop_type: "Workshop Type",
-  region: "Region", component_category: "Component",
-}
+// Dynamic labels — populated from backend
+const FILTER_LABELS: Record<string, string> = {}
 
 const CAT: Record<string, { color: string; light: string; border: string; glass: string }> = {
   Cost:     { color: "#2563EB", light: "#EFF6FF", border: "#BFDBFE", glass: "rgba(37,99,235,0.12)" },
@@ -151,40 +148,145 @@ function MultiSelect({ dim, values, options, color, glass, onChange }: {
   color: string; glass: string; onChange: (vals: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
   const ref = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch("")
+      }
+    }
     document.addEventListener("mousedown", h)
     return () => document.removeEventListener("mousedown", h)
   }, [])
+
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 50)
+    else setSearch("")
+  }, [open])
+
   const toggle = (v: string) => onChange(values.includes(v) ? values.filter(x => x !== v) : [...values, v])
   const label = values.length === 0 ? "All" : values.length === 1 ? values[0] : `${values.length} selected`
   const active = values.length > 0
+
+  // Filter options by search
+  const filteredOptions = search.trim()
+    ? options.filter(o => o.toLowerCase().includes(search.toLowerCase()))
+    : options
+
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-        style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 8, border: `1px solid ${active ? color + "60" : "#E5E7EB"}`, background: active ? `linear-gradient(145deg, ${glass}, ${color}18)` : "linear-gradient(145deg, #FFFFFF, #F8FAFC)", color: active ? color : "#6B7280", fontSize: 11, fontWeight: 500, cursor: "pointer", boxShadow: active ? `0 2px 8px ${color}20` : "0 1px 3px rgba(0,0,0,0.05)", whiteSpace: "nowrap", transition: "all 0.15s" }}>
+        style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 8,
+          border: `1px solid ${active ? color + "60" : "#E5E7EB"}`,
+          background: active ? `linear-gradient(145deg, ${glass}, ${color}18)` : "linear-gradient(145deg, #FFFFFF, #F8FAFC)",
+          color: active ? color : "#6B7280", fontSize: 11, fontWeight: 500, cursor: "pointer",
+          boxShadow: active ? `0 2px 8px ${color}20` : "0 1px 3px rgba(0,0,0,0.05)",
+          whiteSpace: "nowrap", transition: "all 0.15s" }}>
         <span style={{ textTransform: "capitalize" }}>{(FILTER_LABELS as any)[dim] || dim.replace(/_/g, " ")}</span>
         <span style={{ opacity: 0.4, fontSize: 9 }}>▸</span>
         <span style={{ opacity: active ? 1 : 0.6 }}>{label}</span>
         <ChevronDown size={9} style={{ opacity: 0.4 }} />
       </button>
+
       {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 9999, background: "rgba(255,255,255,0.97)", backdropFilter: "blur(20px)", borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.14)", border: "1px solid rgba(255,255,255,0.6)", minWidth: 170, padding: "5px 0" }}>
-          {["All", ...options].map(opt => {
-            const isAll = opt === "All"; const isActive = isAll ? values.length === 0 : values.includes(opt)
-            return (
-              <div key={opt} onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); isAll ? onChange([]) : toggle(opt) }}
-                style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 13px", cursor: "pointer", fontSize: 12, color: isActive ? color : "#374155", background: isActive ? `${color}0E` : "transparent", fontWeight: isActive ? 600 : 400 }}
-                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(0,0,0,0.03)" }}
-                onMouseLeave={e => { e.currentTarget.style.background = isActive ? `${color}0E` : "transparent" }}>
-                <div style={{ width: 15, height: 15, borderRadius: 4, flexShrink: 0, border: `1.5px solid ${isActive ? color : "#D1D5DB"}`, background: isActive ? color : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {isActive && <Check size={9} color="#fff" strokeWidth={3} />}
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 9999,
+          background: "rgba(255,255,255,0.97)", backdropFilter: "blur(20px)", borderRadius: 10,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.14)", border: "1px solid rgba(255,255,255,0.6)",
+          minWidth: 200, maxWidth: 280 }}>
+
+          {/* Search input */}
+          <div style={{ padding: "8px 10px 6px", borderBottom: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6,
+              background: "#F8FAFC", borderRadius: 6, padding: "5px 8px",
+              border: "1px solid #E5E7EB" }}>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="4.5" cy="4.5" r="3.5" stroke="#94A3B8" strokeWidth="1.3"/>
+                <line x1="7.5" y1="7.5" x2="10" y2="10" stroke="#94A3B8" strokeWidth="1.3" strokeLinecap="round"/>
+              </svg>
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onMouseDown={e => e.stopPropagation()}
+                placeholder="Search..."
+                style={{ border: "none", outline: "none", background: "transparent",
+                  fontSize: 11, color: "#374155", width: "100%", fontFamily: "inherit" }}
+              />
+              {search && (
+                <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setSearch("") }}
+                  style={{ border: "none", background: "none", cursor: "pointer", color: "#94A3B8",
+                    fontSize: 12, padding: 0, lineHeight: 1 }}>×</button>
+              )}
+            </div>
+          </div>
+
+          {/* Options list */}
+          <div style={{ maxHeight: 240, overflowY: "auto", padding: "4px 0" }}>
+            {/* All option — only show when not searching */}
+            {!search.trim() && (
+              <div onMouseDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); onChange([]) }}
+                style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 13px",
+                  cursor: "pointer", fontSize: 12,
+                  color: values.length === 0 ? color : "#374155",
+                  background: values.length === 0 ? `${color}0E` : "transparent",
+                  fontWeight: values.length === 0 ? 600 : 400 }}
+                onMouseEnter={e => { if (values.length > 0) e.currentTarget.style.background = "rgba(0,0,0,0.03)" }}
+                onMouseLeave={e => { e.currentTarget.style.background = values.length === 0 ? `${color}0E` : "transparent" }}>
+                <div style={{ width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                  border: `1.5px solid ${values.length === 0 ? color : "#D1D5DB"}`,
+                  background: values.length === 0 ? color : "transparent",
+                  display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {values.length === 0 && <Check size={9} color="#fff" strokeWidth={3} />}
                 </div>
-                {opt}
+                All
               </div>
-            )
-          })}
+            )}
+
+            {filteredOptions.length === 0 && (
+              <div style={{ padding: "10px 13px", fontSize: 11, color: "#94A3B8", textAlign: "center" }}>
+                No results for "{search}"
+              </div>
+            )}
+
+            {filteredOptions.map(opt => {
+              const isActive = values.includes(opt)
+              return (
+                <div key={opt} onMouseDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); toggle(opt) }}
+                  style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 13px",
+                    cursor: "pointer", fontSize: 12,
+                    color: isActive ? color : "#374155",
+                    background: isActive ? `${color}0E` : "transparent",
+                    fontWeight: isActive ? 600 : 400 }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(0,0,0,0.03)" }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isActive ? `${color}0E` : "transparent" }}>
+                  <div style={{ width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                    border: `1.5px solid ${isActive ? color : "#D1D5DB"}`,
+                    background: isActive ? color : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {isActive && <Check size={9} color="#fff" strokeWidth={3} />}
+                  </div>
+                  {opt}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Selected count footer */}
+          {values.length > 0 && (
+            <div style={{ padding: "5px 13px 7px", borderTop: "1px solid #F1F5F9",
+              display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 10, color: "#94A3B8" }}>{values.length} selected</span>
+              <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onChange([]) }}
+                style={{ fontSize: 10, color: color, background: "none", border: "none",
+                  cursor: "pointer", fontWeight: 600, padding: 0 }}>Clear all</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -196,9 +298,19 @@ function CardFilterPanel({ filters, color, glass, onFilterChange }: {
   onFilterChange: (key: string, vals: string[]) => void
 }) {
   const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>(FIXED_OPTIONS)
+  const [filterLabels, setFilterLabels] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    loadFilterOptions().then(setFilterOptions)
+    loadFilterOptions().then(opts => {
+      setFilterOptions(opts)
+      if (_filterMeta) {
+        const labels: Record<string, string> = {}
+        Object.entries(_filterMeta).forEach(([key, m]) => { labels[key] = m.label })
+        setFilterLabels(labels)
+        // Update global FILTER_LABELS
+        Object.assign(FILTER_LABELS, labels)
+      }
+    })
   }, [])
 
   return (
