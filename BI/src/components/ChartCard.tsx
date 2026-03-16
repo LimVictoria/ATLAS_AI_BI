@@ -83,10 +83,11 @@ function extractTablesFromSql(sql: string): Set<string> {
   const tables = new Set<string>()
   if (!sql) return tables
   // Match FROM table [alias] and JOIN table [alias]
-  const matches = sql.matchAll(/(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/gi)
-  for (const m of matches) {
+  const re = /(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/gi
+  const reserved = new Set(["select","where","group","order","having","limit","on","and","or"])
+  let m: RegExpExecArray | null
+  while ((m = re.exec(sql)) !== null) {
     const tname = m[1].toLowerCase()
-    const reserved = new Set(["select","where","group","order","having","limit","on","and","or"])
     if (!reserved.has(tname)) tables.add(tname)
   }
   return tables
