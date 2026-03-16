@@ -39,7 +39,7 @@ def _get_dims() -> dict:
         try:
             from db.duckdb_session import _tables_meta
             if _tables_meta:
-                _primary_table = max(_tables_meta.items(), key=lambda x: len(x[1]["df"]))[0]
+                _primary_table = max(_tables_meta.items(), key=lambda x: len(x[1]["df"].columns))[0]
         except Exception:
             _primary_table = ""
         print(f"[filters] loaded {len(_dims_cache)} filter dimensions, primary_table={_primary_table!r}")
