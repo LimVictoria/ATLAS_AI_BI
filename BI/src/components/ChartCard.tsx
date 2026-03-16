@@ -35,49 +35,81 @@ const CHART_ICONS: Record<string, React.ReactNode> = {
 
 // Fixed enumerations that never change regardless of data
 // Only quarter is truly fixed — all other options come from actual data via /filters/ endpoint
-const FIXED_OPTIONS: Record<string, string[]> = {
-  quarter: ["1", "2", "3", "4"],
+// ── Per-card filter metadata cache (fetched once per session) ────────────────
+interface FilterDimMeta {
+  label: string
+  column: string
+  table: string
+  options: string[]
+  date_extract?: string
+  date_col?: string
+  cast?: string
 }
+let _allDimsCache: Record<string, FilterDimMeta> | null = null
+let _allDimsFetch: Promise<void> | null = null
 
-// Singleton cache — fetched once per session
-let _filterCache: Record<string, string[]> | null = null
-let _filterFetchPromise: Promise<void> | null = null
-
-// Full filter metadata — options + labels from backend
-let _filterMeta: Record<string, { options: string[]; label: string }> | null = null
-
-async function loadFilterOptions(): Promise<Record<string, string[]>> {
-  if (_filterCache) return _filterCache
-  if (_filterFetchPromise) { await _filterFetchPromise; return _filterCache! }
-  _filterFetchPromise = (async () => {
+async function loadAllDims(): Promise<Record<string, FilterDimMeta>> {
+  if (_allDimsCache) return _allDimsCache
+  if (_allDimsFetch) { await _allDimsFetch; return _allDimsCache! }
+  _allDimsFetch = (async () => {
     try {
       const { getFilters } = await import("@/utils/api")
       const data = await getFilters()
-      const result: Record<string, string[]> = { ...FIXED_OPTIONS }
-      const meta: Record<string, { options: string[]; label: string }> = {}
-
-      // Always include quarter
-      meta["quarter"] = { options: ["1","2","3","4"], label: "Quarter" }
-
+      const result: Record<string, FilterDimMeta> = {}
       Object.entries(data.filters || {}).forEach(([key, cfg]: [string, any]) => {
         if (cfg.options?.length > 0) {
-          result[key] = cfg.options
-          meta[key] = { options: cfg.options, label: cfg.label || key.replace(/_/g, " ") }
+          result[key] = {
+            label:        cfg.label || key.replace(/_/g, " "),
+            column:       cfg.column,
+            table:        cfg.table || "",
+            options:      cfg.options,
+            date_extract: cfg.date_extract || "",
+            date_col:     cfg.date_col || "",
+            cast:         cfg.cast || "",
+          }
         }
       })
-      _filterCache = result
-      _filterMeta = meta
-    } catch (err) {
-      console.warn("[Filters] fetch failed, using empty filters:", err)
-      _filterCache = { ...FIXED_OPTIONS }
-      _filterMeta = { quarter: { options: ["1","2","3","4"], label: "Quarter" } }
+      _allDimsCache = result
+    } catch {
+      _allDimsCache = {}
     }
   })()
-  await _filterFetchPromise
-  return _filterCache!
+  await _allDimsFetch
+  return _allDimsCache!
 }
 
-// Dynamic labels — populated from backend
+// Extract table names referenced in a SQL string
+function extractTablesFromSql(sql: string): Set<string> {
+  const tables = new Set<string>()
+  if (!sql) return tables
+  // Match FROM table [alias] and JOIN table [alias]
+  const matches = sql.matchAll(/(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/gi)
+  for (const m of matches) {
+    const tname = m[1].toLowerCase()
+    const reserved = new Set(["select","where","group","order","having","limit","on","and","or"])
+    if (!reserved.has(tname)) tables.add(tname)
+  }
+  return tables
+}
+
+// Get filter dims relevant to a card's SQL
+function getRelevantDims(sql: string, allDims: Record<string, FilterDimMeta>): Record<string, FilterDimMeta> {
+  if (!sql) return allDims  // no SQL yet — show all
+  const tables = extractTablesFromSql(sql)
+  if (tables.size === 0) return allDims
+  // v_maintenance_full is a pre-joined view — all dims apply
+  if (tables.has("v_maintenance_full")) return allDims
+  // Otherwise only show dims whose table is referenced in the SQL
+  const relevant: Record<string, FilterDimMeta> = {}
+  Object.entries(allDims).forEach(([key, dim]) => {
+    if (!dim.table || tables.has(dim.table.toLowerCase())) {
+      relevant[key] = dim
+    }
+  })
+  return relevant
+}
+
+// Dynamic labels for MultiSelect
 const FILTER_LABELS: Record<string, string> = {}
 
 const CAT: Record<string, { color: string; light: string; border: string; glass: string }> = {
@@ -293,34 +325,32 @@ function MultiSelect({ dim, values, options, color, glass, onChange }: {
   )
 }
 
-function CardFilterPanel({ filters, color, glass, onFilterChange }: {
-  filters: Record<string, any>; color: string; glass: string
+function CardFilterPanel({ sql, filters, color, glass, onFilterChange }: {
+  sql: string; filters: Record<string, any>; color: string; glass: string
   onFilterChange: (key: string, vals: string[]) => void
 }) {
-  const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>(FIXED_OPTIONS)
-  const [filterLabels, setFilterLabels] = useState<Record<string, string>>({})
+  const [relevantDims, setRelevantDims] = useState<Record<string, FilterDimMeta>>({})
 
   useEffect(() => {
-    loadFilterOptions().then(opts => {
-      setFilterOptions(opts)
-      if (_filterMeta) {
-        const labels: Record<string, string> = {}
-        Object.entries(_filterMeta).forEach(([key, m]) => { labels[key] = m.label })
-        setFilterLabels(labels)
-        // Update global FILTER_LABELS
-        Object.assign(FILTER_LABELS, labels)
-      }
+    loadAllDims().then(allDims => {
+      const dims = getRelevantDims(sql, allDims)
+      setRelevantDims(dims)
+      // Update global FILTER_LABELS for MultiSelect display
+      Object.entries(dims).forEach(([key, d]) => { FILTER_LABELS[key] = d.label })
     })
-  }, [])
+  }, [sql])  // re-run when SQL changes
+
+  const dimEntries = Object.entries(relevantDims).filter(([, d]) => d.options.length > 0)
+  if (dimEntries.length === 0) return null
 
   return (
-    <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid #F1F5F9", background: "linear-gradient(to bottom, #FAFBFC, #F5F7FA)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-      <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", letterSpacing: "0.06em", marginRight: 2 }}>FILTER</span>
-      {Object.keys(filterOptions).filter(dim => filterOptions[dim].length > 0).map(dim => (
-        <MultiSelect key={dim} dim={dim}
-          values={Array.isArray(filters[dim]) ? filters[dim] : filters[dim] ? [filters[dim]] : []}
-          options={filterOptions[dim]} color={color} glass={glass}
-          onChange={vals => onFilterChange(dim, vals)} />
+    <div style={{ padding: "6px 10px 8px", borderBottom: "1px solid #F1F5F9", background: "linear-gradient(to bottom, #FAFBFC, #F5F7FA)", display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+      <span style={{ fontSize: 9.5, fontWeight: 700, color: "#94A3B8", letterSpacing: "0.06em", marginRight: 2, flexShrink: 0 }}>FILTER</span>
+      {dimEntries.map(([key, dim]) => (
+        <MultiSelect key={key} dim={key}
+          values={Array.isArray(filters[key]) ? filters[key] : filters[key] ? [filters[key]] : []}
+          options={dim.options} color={color} glass={glass}
+          onChange={vals => onFilterChange(key, vals)} />
       ))}
     </div>
   )
@@ -517,17 +547,16 @@ export default function ChartCard({ card }: Props) {
     else newFilters[key] = vals.length === 1 ? vals[0] : vals
     updateChart(card.id, { loading: true, filters: newFilters })
     try {
-      // Always use base_sql (LLM-generated SQL with intent filters intact)
-      // base_sql never changes — UI panel filters are appended on top by backend
-      // Fall back to card.sql only if base_sql was never set (old cards)
-      let sourceSql = card.base_sql || card.sql || ""
+      // Use base_sql as the clean source — filters are appended on top by backend
+      // base_sql is the original LLM SQL without any UI filters
+      const sourceSql = card.base_sql || card.sql || ""
       if (sourceSql) {
         const { rerenderChart } = await import("@/utils/api")
         const result = await rerenderChart(sourceSql, card.chart_type, card.title, card.category, newFilters)
         updateChart(card.id, {
           chart_data: result.chart,
           sql: result.sql || sourceSql,
-          base_sql: card.base_sql || sourceSql,  // preserve base_sql
+          base_sql: card.base_sql || sourceSql,
           filters: newFilters,
           loading: false,
         })
@@ -699,6 +728,17 @@ export default function ChartCard({ card }: Props) {
           </GlassBtn>
         </div>
       </div>
+
+      {/* ── Per-card filter strip — always visible, SQL-aware ── */}
+      {!flipped && (
+        <CardFilterPanel
+          sql={card.sql || card.base_sql || ""}
+          filters={card.filters || {}}
+          color={cat.color}
+          glass={cat.glass}
+          onFilterChange={applyCardFilter}
+        />
+      )}
 
       {/* ── Active filter caption ── */}
       {!flipped && hasActiveFilters && (() => {
