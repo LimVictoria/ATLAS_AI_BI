@@ -71,11 +71,17 @@ const serialiseChart = (c: ChartCard) => ({
   title: c.title,
   category: c.category,
   chart_type: c.chart_type,
-  chart_data: c.chart_data,
+  // Strip chart_data from persistence — it's Plotly JSON and too large for Supabase index
+  // Cards reload from SQL when the board is loaded
+  chart_data: null,
   filters: c.filters,
   available_charts: c.available_charts,
   sql: c.sql || "",
   base_sql: c.base_sql || c.sql || "",
+  long_sql: c.long_sql || c.base_sql || c.sql || "",
+  wide_sql: c.wide_sql || "",
+  is_wide: c.is_wide || false,
+  pivot_col: c.pivot_col || "",
   filter_suggestions: c.filter_suggestions || [],
   selected: false,
   loading: false,
@@ -139,16 +145,41 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     if (get().boardLoaded) return
     try {
       const resp = await loadBoard(get().userId)
-      const saved: ChartCard[] = resp.board_state || []
-      // Filter out broken cards (no chart_data, or chart_data contains "Metric Removed")
+      const saved: ChartCard[] = (resp.board_state || []).map((c: any) => ({
+        ...c,
+        // Cards saved without chart_data need to be marked loading so they re-render from SQL
+        chart_data: c.chart_data || null,
+        loading: !c.chart_data && !!c.sql,
+      }))
+      // Keep cards that have SQL (will rerender) or chart_data — discard truly empty cards
       const valid = saved.filter(c => {
-        if (!c.chart_data) return false
-        const raw = typeof c.chart_data === "string" ? c.chart_data : JSON.stringify(c.chart_data)
-        if (raw.includes("Metric Removed") || raw.includes("metric_removed")) return false
+        if (!c.sql && !c.chart_data) return false
+        if (c.chart_data) {
+          const raw = typeof c.chart_data === "string" ? c.chart_data : JSON.stringify(c.chart_data)
+          if (raw.includes("Metric Removed") || raw.includes("metric_removed")) return false
+        }
         return true
       })
       set({ charts: valid, boardLoaded: true })
       _cardCounter = valid.length
+
+      // Auto-rerender cards that have SQL but no chart_data
+      const { rerenderChart } = await import("@/utils/api")
+      for (const card of valid) {
+        if (!card.chart_data && card.sql) {
+          try {
+            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, card.filters || {})
+            get().updateChart(card.id, {
+              chart_data: result.chart,
+              chart_type: result.chart_type || card.chart_type,
+              available_charts: result.available_charts || card.available_charts,
+              loading: false,
+            })
+          } catch {
+            get().updateChart(card.id, { loading: false })
+          }
+        }
+      }
     } catch (e) {
       console.warn("[Board] load failed:", e)
       set({ boardLoaded: true })
