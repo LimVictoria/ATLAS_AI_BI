@@ -382,11 +382,69 @@ class RerenderRequest(BaseModel):
     category: str = "General"
     filters: Optional[dict] = {}
 
+def _qualify_conditions(conditions: str, sql: str, dims: dict) -> str:
+    """
+    Qualify ambiguous column names in WHERE conditions for JOIN queries.
+    Detects table aliases from the SQL FROM/JOIN clauses and prefixes columns.
+    e.g. "year = 2024" → "f.year = 2024" when f is alias for fact_maintenance_event
+    """
+    import re as _re2
+
+    # Only qualify if SQL has JOINs
+    if not _re2.search(r'\bJOIN\b', sql, _re2.IGNORECASE):
+        return conditions  # single table query — no ambiguity
+
+    # Extract table aliases from FROM and JOIN clauses
+    # Matches: FROM table_name alias, JOIN table_name alias, FROM table_name AS alias
+    alias_map = {}  # alias → table_name
+    table_map = {}  # table_name → alias
+    pattern = _re2.findall(
+        r'(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?',
+        sql, _re2.IGNORECASE
+    )
+    for table_name, alias in pattern:
+        alias = alias or table_name  # if no alias, use table name itself
+        if alias.upper() not in {"ON", "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "SELECT"}:
+            alias_map[alias.lower()] = table_name.lower()
+            table_map[table_name.lower()] = alias
+
+    if not alias_map:
+        return conditions
+
+    # Build column → table mapping from loaded schema
+    try:
+        from db.duckdb_session import _tables_meta
+        col_to_table: dict = {}
+        for tname, meta in _tables_meta.items():
+            for col in meta["df"].columns:
+                if tname.lower() in table_map:  # only tables referenced in this SQL
+                    col_to_table[col.lower()] = tname.lower()
+    except Exception:
+        return conditions
+
+    # Qualify each condition clause
+    qualified_parts = []
+    for clause in _re2.split(r'\s+AND\s+', conditions, flags=_re2.IGNORECASE):
+        clause = clause.strip()
+        # Extract column name (before =, IN, LIKE, BETWEEN, IS)
+        col_match = _re2.match(r'^(\w+)\s*(?:=|IN|LIKE|BETWEEN|IS)', clause, _re2.IGNORECASE)
+        if col_match:
+            col = col_match.group(1).lower()
+            # Check if already qualified (has a dot)
+            if '.' not in clause and col in col_to_table:
+                t = col_to_table[col]
+                alias = table_map.get(t, t)
+                clause = clause.replace(col_match.group(1), f"{alias}.{col_match.group(1)}", 1)
+        qualified_parts.append(clause)
+
+    return " AND ".join(qualified_parts)
+
+
 @router.post("/rerender")
 def rerender_chart(req: RerenderRequest):
     """Re-render a card with a different chart type and/or filters using stored SQL."""
     from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
-    from api.filters import build_where_from_filters
+    from api.filters import build_where_from_filters, _get_dims
 
     print(f"[rerender] sql={req.sql[:80]!r} filters={req.filters} chart_type={req.chart_type}")
 
@@ -403,9 +461,11 @@ def rerender_chart(req: RerenderRequest):
         if where:
             # Strip leading WHERE keyword — we'll insert conditions only
             new_conditions = _re.sub(r'(?i)^\s*WHERE\s+', '', where).strip()
+            # Qualify ambiguous column names for JOIN queries
+            new_conditions = _qualify_conditions(new_conditions, sql, _get_dims())
+            print(f"[rerender] qualified conditions: {new_conditions[:120]}")
             sql_upper = sql.upper()
             if _re.search(r'\bWHERE\b', sql_upper):
-                # SQL already has WHERE — append with AND before GROUP/ORDER/HAVING/LIMIT
                 group_match = _re.search(r'\b(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b', sql, _re.IGNORECASE)
                 if group_match:
                     insert_at = group_match.start()
@@ -413,7 +473,6 @@ def rerender_chart(req: RerenderRequest):
                 else:
                     sql = sql.rstrip() + f' AND {new_conditions}'
             else:
-                # No WHERE yet — insert before GROUP/ORDER/HAVING/LIMIT or at end
                 group_match = _re.search(r'\b(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b', sql, _re.IGNORECASE)
                 if group_match:
                     insert_at = group_match.start()
