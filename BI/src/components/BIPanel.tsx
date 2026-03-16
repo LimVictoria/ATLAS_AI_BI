@@ -2,6 +2,7 @@
 import { BarChart2, Layers } from "lucide-react"
 import { useDashboardStore } from "@/store/dashboard"
 import ChartCard from "./ChartCard"
+import GlobalFilterBar from "./GlobalFilterBar"
 import { Responsive, WidthProvider } from "react-grid-layout"
 import { useEffect, useState } from "react"
 
@@ -86,6 +87,9 @@ export default function BIPanel() {
           )}
         </div>
       </div>
+
+      {/* Global Filter Bar */}
+      <GlobalFilterBar />
 
       {/* Canvas */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "16px 18px" }}>
