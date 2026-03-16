@@ -397,13 +397,10 @@ export default function ChartCard({ card }: Props) {
     else newFilters[key] = vals.length === 1 ? vals[0] : vals
     updateChart(card.id, { loading: true, filters: newFilters })
     try {
-      // Always use base_sql (original without filters) as the source
-      // If base_sql missing, strip WHERE from card.sql to recover the base
-      let sourceSql = card.base_sql || ""
-      if (!sourceSql && card.sql) {
-        // Strip existing WHERE clause to get clean base SQL
-        sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
-      }
+      // Always use base_sql (LLM-generated SQL with intent filters intact)
+      // base_sql never changes — UI panel filters are appended on top by backend
+      // Fall back to card.sql only if base_sql was never set (old cards)
+      let sourceSql = card.base_sql || card.sql || ""
       if (sourceSql) {
         const { rerenderChart } = await import("@/utils/api")
         const result = await rerenderChart(sourceSql, card.chart_type, card.title, card.category, newFilters)
@@ -424,11 +421,8 @@ export default function ChartCard({ card }: Props) {
     if (type === card.chart_type) return
     updateChart(card.id, { loading: true })
     try {
-      // Build source SQL — use stored sql, strip WHERE to get base, or ask backend to rerender
-      let sourceSql = card.base_sql || ""
-      if (!sourceSql && card.sql) {
-        sourceSql = card.sql.split(/\s+WHERE\s+/i)[0].trim()
-      }
+      // Use base_sql (LLM intent SQL) — backend will append active UI filters on top
+      let sourceSql = card.base_sql || card.sql || ""
       if (!sourceSql) {
         // No SQL — cannot rerender, silently do nothing (icon stays on current type)
         updateChart(card.id, { loading: false })
