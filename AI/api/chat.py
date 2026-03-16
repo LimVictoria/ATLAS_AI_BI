@@ -298,25 +298,31 @@ def rerender_chart(req: RerenderRequest):
     from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
     from api.filters import build_where_from_filters
 
-    # Inject filters into SQL — strip existing WHERE then insert fresh one
+    # Inject UI filters into SQL — APPEND to existing WHERE (never strip intent filters)
+    import re as _re
     sql = req.sql
     if req.filters:
         where = build_where_from_filters(req.filters)
         if where:
-            import re
-            # Remove any existing WHERE clause
-            sql = re.sub(
-                r'(?i)\s+WHERE\s+.+?(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s+HAVING|\s+LIMIT|\s*$)',
-                ' ', sql, flags=re.DOTALL
-            ).strip()
-            # Find insertion point before GROUP BY / ORDER BY / end
+            # Strip leading WHERE keyword — we'll insert conditions only
+            new_conditions = _re.sub(r'(?i)^\s*WHERE\s+', '', where).strip()
             sql_upper = sql.upper()
-            insert_at = len(sql)
-            for kw in ['GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT']:
-                idx = sql_upper.rfind(kw)
-                if idx != -1 and idx < insert_at:
-                    insert_at = idx
-            sql = sql[:insert_at].rstrip() + ' ' + where + ' ' + sql[insert_at:]
+            if _re.search(r'\bWHERE\b', sql_upper):
+                # SQL already has WHERE — append with AND before GROUP/ORDER/HAVING/LIMIT
+                group_match = _re.search(r'\b(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b', sql, _re.IGNORECASE)
+                if group_match:
+                    insert_at = group_match.start()
+                    sql = sql[:insert_at].rstrip() + f' AND {new_conditions} ' + sql[insert_at:]
+                else:
+                    sql = sql.rstrip() + f' AND {new_conditions}'
+            else:
+                # No WHERE yet — insert before GROUP/ORDER/HAVING/LIMIT or at end
+                group_match = _re.search(r'\b(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b', sql, _re.IGNORECASE)
+                if group_match:
+                    insert_at = group_match.start()
+                    sql = sql[:insert_at].rstrip() + f' WHERE {new_conditions} ' + sql[insert_at:]
+                else:
+                    sql = sql.rstrip() + f' WHERE {new_conditions}'
 
     try:
         df = run_query(sql)
