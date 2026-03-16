@@ -390,6 +390,11 @@ def rerender_chart(req: RerenderRequest):
 
     print(f"[rerender] sql={req.sql[:80]!r} filters={req.filters} chart_type={req.chart_type}")
 
+    # Build WHERE clause and log it for debugging
+    if req.filters:
+        _debug_where = build_where_from_filters(req.filters)
+        print(f"[rerender] WHERE clause: {_debug_where[:120]}")
+
     # Inject UI filters into SQL — APPEND to existing WHERE (never strip intent filters)
     import re as _re
     sql = req.sql
