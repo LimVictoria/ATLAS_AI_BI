@@ -273,12 +273,19 @@ export default function GlobalFilterBar() {
   const targetCards = applyTo === "selected" && selected.length > 0 ? selected : charts
 
   const applyFilter = useCallback(async (dimKey: string, vals: string[]) => {
-    for (const card of targetCards) {
+    // Mark all cards loading immediately (instant feedback)
+    targetCards.forEach(card => {
       const newFilters = { ...card.filters }
       if (vals.length === 0) delete newFilters[dimKey]
       else newFilters[dimKey] = vals.length === 1 ? vals[0] : vals
-
       updateChart(card.id, { loading: true, filters: newFilters })
+    })
+
+    // Fire all rerenders in parallel
+    await Promise.all(targetCards.map(async card => {
+      const newFilters = { ...card.filters }
+      if (vals.length === 0) delete newFilters[dimKey]
+      else newFilters[dimKey] = vals.length === 1 ? vals[0] : vals
       try {
         const sourceSql = card.base_sql || card.sql || ""
         if (sourceSql) {
@@ -295,12 +302,15 @@ export default function GlobalFilterBar() {
       } catch {
         updateChart(card.id, { loading: false })
       }
-    }
+    }))
   }, [targetCards, updateChart])
 
   const clearAll = useCallback(async () => {
-    for (const card of targetCards) {
-      updateChart(card.id, { loading: true, filters: {} })
+    // Mark all loading immediately
+    targetCards.forEach(card => updateChart(card.id, { loading: true, filters: {} }))
+
+    // Fire all rerenders in parallel
+    await Promise.all(targetCards.map(async card => {
       try {
         const sourceSql = card.base_sql || card.sql || ""
         if (sourceSql) {
@@ -312,14 +322,12 @@ export default function GlobalFilterBar() {
       } catch {
         updateChart(card.id, { loading: false })
       }
-    }
+    }))
   }, [targetCards, updateChart])
 
   // Count total active filters across target cards
   const totalActive = targetCards.reduce((sum, c) =>
     sum + Object.keys(c.filters || {}).filter(k => c.filters[k] && c.filters[k] !== "").length, 0)
-
-  if (charts.length === 0) return null
 
   return (
     <div style={{
@@ -330,8 +338,8 @@ export default function GlobalFilterBar() {
       boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
     }}>
 
-      {/* Apply to selector */}
-      <div ref={applyRef} style={{ position: "relative", flexShrink: 0 }}>
+      {/* Apply to selector — only when charts exist */}
+      {charts.length > 0 && <div ref={applyRef} style={{ position: "relative", flexShrink: 0 }}>
         <button onClick={() => setApplyOpen(o => !o)} style={{
           display: "flex", alignItems: "center", gap: 5, padding: "5px 10px",
           borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer",
@@ -370,10 +378,9 @@ export default function GlobalFilterBar() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
-      {/* Divider */}
-      <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+      {charts.length > 0 && <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />}
 
       {/* Filter dropdowns */}
       {Object.entries(dims).map(([key, dim]) => (
