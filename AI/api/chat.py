@@ -158,6 +158,10 @@ async def chat(req: ChatRequest):
         "narrative":       "",
         "ui_actions":      [],
         "replace_card_id": None,
+        "long_sql":        "",
+        "wide_sql":        "",
+        "is_wide":         False,
+        "pivot_col":       "",
     }
 
     try:
@@ -309,6 +313,64 @@ def get_dq_warnings():
         return {"warnings": get_dq_warnings()}
     except Exception as e:
         return {"warnings": []}
+
+
+class ToggleFormatRequest(BaseModel):
+    long_sql: str
+    wide_sql: str
+    is_wide: bool          # True = switching TO wide, False = switching TO long
+    chart_type: str
+    title: str = "Chart"
+    category: str = "General"
+    filters: Optional[dict] = {}
+    pivot_col: Optional[str] = ""
+
+@router.post("/toggle_format")
+def toggle_format(req: ToggleFormatRequest):
+    """Switch a card between wide (pivot) and long format."""
+    from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
+    import re as _re
+
+    # Use the appropriate SQL based on target format
+    sql = req.wide_sql if req.is_wide else req.long_sql
+    if not sql:
+        raise HTTPException(status_code=400, detail="SQL not available for this format")
+
+    try:
+        df = run_query(sql)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQL error: {e}")
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Query returned no rows")
+
+    df   = _clean_df(df)
+    cols = df.columns.tolist()
+    meta = _infer_meta(cols)
+    meta["category"] = req.category
+
+    # Wide format defaults to table, long format uses requested chart type
+    chart_type = "table" if req.is_wide else req.chart_type
+
+    try:
+        chart_json = _build_chart(df, meta, chart_type)
+    except Exception:
+        chart_json = _build_chart(df, meta, "table")
+        chart_type = "table"
+
+    available = _smart_available_charts(cols, df, chart_type)
+
+    import re as _re2
+    chart_json = _re2.sub(r'NaN', '0', chart_json)
+    chart_json = _re2.sub(r'Infinity', '0', chart_json)
+
+    return {
+        "chart":            chart_json,
+        "chart_type":       chart_type,
+        "available_charts": available,
+        "row_count":        len(df),
+        "sql":              sql,
+        "is_wide":          req.is_wide,
+    }
 
 
 class RerenderRequest(BaseModel):
