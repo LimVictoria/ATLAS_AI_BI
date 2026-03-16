@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic"
 import {
   X, Copy, BarChart2, GripHorizontal, Pencil, Check,
-  SlidersHorizontal, ChevronDown, Code2, RotateCcw
+  ChevronDown, Code2, RotateCcw
 } from "lucide-react"
 import { useDashboardStore, ChartCard as ChartCardType, ChartType } from "@/store/dashboard"
 // runMetric removed — ChartCard now uses rerenderChart via card.sql
@@ -490,13 +490,7 @@ export default function ChartCard({ card }: Props) {
   const { toggleSelect, removeChart, updateChart, addChart } = useDashboardStore()
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(card.title)
-  const [showFiltersLocal, setShowFiltersLocal] = useState(false)
-  const showFilters = showFiltersLocal || !!card.showFilters
-  const setShowFilters = (val: boolean | ((prev: boolean) => boolean)) => {
-    const next = typeof val === "function" ? val(showFilters) : val
-    setShowFiltersLocal(next)
-    if (!next) updateChart(card.id, { showFilters: false })
-  }
+
   const [flipped, setFlipped] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (editingTitle) inputRef.current?.focus() }, [editingTitle])
@@ -655,15 +649,6 @@ export default function ChartCard({ card }: Props) {
 
           {!flipped && (
             <>
-              <GlassBtn onClick={() => setShowFilters(f => !f)} active={showFilters || hasActiveFilters} activeColor={cat.color} activeGlass={cat.glass} title="Filters">
-                <div style={{ position: "relative" }}>
-                  <SlidersHorizontal size={12} />
-                  {hasActiveFilters && <span style={{ position: "absolute", top: -4, right: -4, width: 6, height: 6, borderRadius: "50%", background: cat.color, border: "1.5px solid #fff" }} />}
-                </div>
-              </GlassBtn>
-
-              <div style={{ width: 1, height: 18, background: "#E8ECF0", margin: "0 2px" }} />
-
               {card.available_charts?.map(t => (
                 <GlassBtn key={t} title={t.charAt(0).toUpperCase() + t.slice(1).replace("_", " ")}
                   onClick={() => switchChartType(t)}
@@ -700,10 +685,6 @@ export default function ChartCard({ card }: Props) {
           </GlassBtn>
         </div>
       </div>
-
-      {!flipped && showFilters && (
-        <CardFilterPanel filters={card.filters || {}} color={cat.color} glass={cat.glass} onFilterChange={applyCardFilter} />
-      )}
 
       {/* ── Active filter caption ── */}
       {!flipped && hasActiveFilters && (() => {
