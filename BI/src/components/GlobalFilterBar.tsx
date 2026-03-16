@@ -38,7 +38,7 @@ async function loadDims(): Promise<Record<string, FilterDim>> {
       })
       _dimCache = result
     } catch {
-      _dimCache = { quarter: { label: "Quarter", column: "month", options: ["1","2","3","4"] } }
+      _dimCache = { quarter: { label: "Quarter", column: "month", table: "", options: ["1","2","3","4"] } }
     }
   })()
   await _dimFetch
