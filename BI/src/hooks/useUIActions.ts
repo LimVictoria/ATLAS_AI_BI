@@ -26,6 +26,10 @@ export async function processUIActions(actions: any[]) {
         available_charts: raw.available_charts || ["bar", "line", "table"],
         sql: raw.sql || action.sql || "",
         base_sql: raw.sql || action.sql || "",
+        long_sql: action.long_sql || raw.sql || action.sql || "",
+        wide_sql: action.wide_sql || "",
+        is_wide: action.is_wide || false,
+        pivot_col: action.pivot_col || "",
         filter_suggestions: action.filter_suggestions || [],
         selected: false,
         loading: false,
@@ -48,6 +52,38 @@ export async function processUIActions(actions: any[]) {
         filters: {},
         loading: false,
       })
+      continue
+    }
+
+    // ── Toggle wide/long format ───────────────────────────────────────────
+    if (action.action === "toggle_format") {
+      const card = charts.find(c => c.id === action.card_id)
+      if (!card) continue
+      const newIsWide = !card.is_wide
+      updateChart(action.card_id, { loading: true })
+      try {
+        const { toggleFormat } = await import("@/utils/api")
+        const result = await toggleFormat({
+          long_sql: card.long_sql || card.base_sql || card.sql || "",
+          wide_sql: card.wide_sql || "",
+          is_wide: newIsWide,
+          chart_type: card.chart_type,
+          title: card.title,
+          category: card.category,
+          filters: card.filters || {},
+          pivot_col: card.pivot_col || "",
+        })
+        updateChart(action.card_id, {
+          chart_data: result.chart,
+          chart_type: result.chart_type,
+          sql: result.sql,
+          is_wide: newIsWide,
+          available_charts: result.available_charts || card.available_charts,
+          loading: false,
+        })
+      } catch {
+        updateChart(action.card_id, { loading: false })
+      }
       continue
     }
 
