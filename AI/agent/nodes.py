@@ -67,6 +67,11 @@ class AgentState(TypedDict):
     narrative:       str
     ui_actions:      list[dict]
     replace_card_id: Optional[str]
+    # Pivot / wide format
+    long_sql:        str
+    wide_sql:        str
+    is_wide:         bool
+    pivot_col:       str
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -86,6 +91,65 @@ def _safe_rows(df) -> list[dict]:
                 safe[k] = v
         result.append(safe)
     return result
+
+
+def _detect_pivot_intent(msg: str) -> bool:
+    """Detect if the user wants a wide/pivot format table."""
+    msg = msg.lower()
+    pivot_phrases = [
+        "columns for", "as columns", "column for each", "column per",
+        "pivot", "wide format", "show as columns", "breakdown across",
+        "each segment as", "each brand as", "each year as", "each month as",
+        "per segment", "per brand", "by column", "column by",
+        "wide table", "cross tab", "crosstab",
+    ]
+    return any(p in msg for p in pivot_phrases)
+
+
+async def _build_pivot_sql(base_sql: str, pivot_col: str, measure_col: str, row_col: str) -> tuple[str, list]:
+    """Given a long-format SQL, build a wide-format CASE WHEN pivot SQL.
+    First queries distinct values of pivot_col, then generates the pivot.
+    Returns (wide_sql, distinct_values)."""
+    try:
+        # Step 1: discover distinct values
+        # Extract table name from base_sql
+        import re
+        table_match = re.search(r'FROM\s+(\w+)', base_sql, re.IGNORECASE)
+        table_name = table_match.group(1) if table_match else "v_maintenance_full"
+        discovery_sql = f"SELECT DISTINCT {pivot_col} FROM {table_name} WHERE {pivot_col} IS NOT NULL ORDER BY {pivot_col}"
+        distinct_df = run_query(discovery_sql)
+        distinct_vals = distinct_df.iloc[:, 0].tolist()
+
+        if not distinct_vals or len(distinct_vals) > 20:
+            return "", distinct_vals  # too many values — skip pivot
+
+        # Step 2: build CASE WHEN pivot SQL
+        def col_alias(v):
+            # Make a safe column alias from value
+            return re.sub(r'[^a-zA-Z0-9]', '_', str(v)).strip('_').lower()
+
+        sep = ",\n       "
+        cases = sep.join(
+            "ROUND(SUM(CASE WHEN " + pivot_col + " = '" + str(v) + "' THEN " + measure_col + " ELSE 0 END), 2) AS " + col_alias(v)
+            for v in distinct_vals
+        )
+
+        # Extract WHERE clause from base_sql if present
+        where_match = re.search(r'WHERE(.+?)(?=GROUP|ORDER|HAVING|LIMIT|$)', base_sql, re.IGNORECASE | re.DOTALL)
+        where_clause = f"WHERE {where_match.group(1).strip()}" if where_match else ""
+
+        wide_sql = (
+            "SELECT " + row_col + ",\n       " + cases + "\n"
+            "FROM " + table_name + "\n"
+            + (where_clause + "\n" if where_clause else "")
+            + "GROUP BY " + row_col + "\n"
+            + "ORDER BY SUM(" + measure_col + ") DESC"
+        )
+
+        return wide_sql.strip(), distinct_vals
+    except Exception as e:
+        print(f"[pivot] build failed: {e}")
+        return "", []
 
 
 def _infer_meta(columns: list[str]) -> dict:
@@ -348,9 +412,65 @@ CHART TYPE GUIDE:
         if not sql.upper().startswith("SELECT"):
             raise ValueError(f"LLM returned non-SELECT SQL: {sql[:80]}")
         print(f"[sql_node] SQL={sql[:80]}...")
+
+        # ── Pivot detection ────────────────────────────────────────────────
+        long_sql  = sql
+        wide_sql  = ""
+        is_wide   = False
+        pivot_col = ""
+        user_msg  = state.get("user_message", "")
+
+        # Check if data has pivot-eligible shape:
+        # Run a quick schema check — does the SQL return 1 cat + 1 cat + 1 numeric?
+        try:
+            import re as _re
+            # Detect GROUP BY with 2+ columns — potential pivot candidate
+            gb_match = _re.search(r'GROUP\s+BY\s+(.+?)(?=ORDER|HAVING|LIMIT|$)', sql, _re.IGNORECASE | _re.DOTALL)
+            if gb_match:
+                gb_cols = [c.strip() for c in gb_match.group(1).split(",")]
+                # Need exactly 2 GROUP BY columns to be pivot-eligible
+                if len(gb_cols) == 2:
+                    row_col   = gb_cols[0]
+                    pivot_col = gb_cols[1]
+                    # Find measure column from SELECT
+                    select_match = _re.search(r'SELECT\s+(.+?)\s+FROM', sql, _re.IGNORECASE | _re.DOTALL)
+                    if select_match:
+                        select_parts = select_match.group(1).split(",")
+                        measure_col = None
+                        for part in select_parts:
+                            part = part.strip()
+                            if any(agg in part.upper() for agg in ["SUM(", "AVG(", "COUNT(", "MAX(", "MIN("]):
+                                # Extract the alias or expression
+                                alias_match = _re.search(r'AS\s+(\w+)\s*$', part, _re.IGNORECASE)
+                                if alias_match:
+                                    measure_col = alias_match.group(1)
+                                else:
+                                    # Use the raw aggregation column
+                                    inner = _re.search(r'\((.+?)\)', part)
+                                    measure_col = inner.group(1) if inner else None
+                                break
+
+                        if measure_col:
+                            # Build wide SQL — always try, default to wide if intent detected or possible
+                            built_wide, distinct_vals = await _build_pivot_sql(sql, pivot_col, measure_col, row_col)
+                            if built_wide:
+                                wide_sql = built_wide
+                                # Default to wide if user asked for it OR always if possible
+                                is_wide = True  # wide first by default
+                                print(f"[sql_node] Pivot detected — pivot_col={pivot_col!r} values={distinct_vals}")
+        except Exception as pivot_err:
+            print(f"[sql_node] Pivot detection error (non-fatal): {pivot_err}")
+
+        # Use wide SQL as the active SQL if wide is default
+        active_sql = wide_sql if (is_wide and wide_sql) else long_sql
+
         return {
             **state,
-            "sql":           sql,
+            "sql":           active_sql,
+            "long_sql":      long_sql,
+            "wide_sql":      wide_sql,
+            "is_wide":       is_wide,
+            "pivot_col":     pivot_col,
             "sql_error":     "",
             "chart_type":    parsed.get("chart_type", "bar"),
             "chart_title":   parsed.get("title", "Query Result"),
@@ -669,14 +789,23 @@ Rules:
     replace_id = state.get("replace_card_id")
     action_type = "replace_chart" if replace_id else "add_chart"
 
+    long_sql  = state.get("long_sql", "") or state.get("sql", "")
+    wide_sql  = state.get("wide_sql", "")
+    is_wide   = state.get("is_wide", False)
+    pivot_col = state.get("pivot_col", "")
+
     ui_actions = [{
         "action":            action_type,
-        "card_id":           replace_id,  # only used for replace_chart
+        "card_id":           replace_id,
         "metric_id":         state.get("chart_title","").lower().replace(" ","_"),
         "title":             state.get("chart_title","Query Result"),
         "chart_type":        state.get("chart_type","bar"),
         "category":          state.get("chart_category","General"),
         "filter_suggestions": filter_suggestions,
+        "long_sql":          long_sql,
+        "wide_sql":          wide_sql,
+        "is_wide":           is_wide,
+        "pivot_col":         pivot_col,
         "chart_data": {
             "chart":            state.get("chart_json"),
             "chart_type":       state.get("chart_type","bar"),
