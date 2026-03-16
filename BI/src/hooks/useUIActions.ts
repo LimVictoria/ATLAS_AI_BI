@@ -116,11 +116,15 @@ export async function processUIActions(actions: any[]) {
 
       for (const card of applyTo) {
         const newFilters = { ...card.filters, [action.dimension]: action.value }
-        const { runMetric } = await import("@/utils/api")
         updateChart(card.id, { loading: true, filters: newFilters })
         try {
-          const result = await runMetric(card.metric_id, card.chart_type, newFilters)
-          updateChart(card.id, { chart_data: result.chart, loading: false })
+          if (card.sql) {
+            const { rerenderChart } = await import("@/utils/api")
+            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
+            updateChart(card.id, { chart_data: result.chart, filters: newFilters, loading: false })
+          } else {
+            updateChart(card.id, { filters: newFilters, loading: false })
+          }
         } catch {
           updateChart(card.id, { loading: false })
         }
