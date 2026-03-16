@@ -25,7 +25,7 @@ async function loadDims(): Promise<Record<string, FilterDim>> {
       const data = await getFilters()
       const result: Record<string, FilterDim> = {}
       // Always include quarter
-      result["quarter"] = { label: "Quarter", column: "month", options: ["1","2","3","4"] }
+      result["quarter"] = { label: "Quarter", column: "month", table: "", options: ["1","2","3","4"] }
       Object.entries(data.filters || {}).forEach(([key, cfg]: [string, any]) => {
         if (cfg.options?.length > 0) {
           result[key] = {
