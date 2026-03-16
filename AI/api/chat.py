@@ -299,7 +299,9 @@ def reload_data():
     """Force reload all data files and regenerate schema guide."""
     try:
         from db.duckdb_session import reload_data as _reload
+        from api.filters import invalidate_cache
         result = _reload()
+        invalidate_cache()  # force filter dimensions to rebuild from new data
         return {"status": "reloaded", **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
