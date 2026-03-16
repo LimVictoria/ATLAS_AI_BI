@@ -14,6 +14,10 @@ export interface ChartCard {
   available_charts: ChartType[]
   sql?: string
   base_sql?: string
+  long_sql?: string        // original GROUP BY SQL (long format)
+  wide_sql?: string        // CASE WHEN pivot SQL (wide format)
+  is_wide?: boolean        // currently showing wide format
+  pivot_col?: string       // the column being pivoted (e.g. fleet_segment)
   filter_suggestions?: Array<{dim: string; value: string; label: string}>
   showFilters?: boolean
   selected: boolean
