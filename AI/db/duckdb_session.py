@@ -293,7 +293,9 @@ def _is_time_column(col_name: str, series) -> bool:
 
 
 def _should_skip(col_name: str) -> bool:
-    """Return True if column should be skipped as a filter."""
+    """Return True if column should be skipped as a filter.
+    Only skips pure sequential indexes and time composite columns.
+    Everything else — measurements, booleans, IDs — is included."""
     c = col_name.lower()
     if c in _INDEX_NAMES:
         return True
@@ -361,7 +363,7 @@ def get_filter_dimensions() -> dict:
         is_time = _is_time_column(col, series)
 
         if is_datetime:
-            continue  # date range picker — future enhancement
+            continue  # datetime columns — date range picker is a future enhancement
 
         # Determine cast
         cast = None
