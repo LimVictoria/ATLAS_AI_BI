@@ -8,6 +8,7 @@ import { rerenderChart } from "@/utils/api"
 interface FilterDim {
   label: string
   column: string
+  table: string
   options: string[]
 }
 
@@ -27,7 +28,12 @@ async function loadDims(): Promise<Record<string, FilterDim>> {
       result["quarter"] = { label: "Quarter", column: "month", options: ["1","2","3","4"] }
       Object.entries(data.filters || {}).forEach(([key, cfg]: [string, any]) => {
         if (cfg.options?.length > 0) {
-          result[key] = { label: cfg.label || key.replace(/_/g, " "), column: cfg.column, options: cfg.options }
+          result[key] = {
+            label: cfg.label || key.replace(/_/g, " "),
+            column: cfg.column,
+            table: cfg.table || "",
+            options: cfg.options
+          }
         }
       })
       _dimCache = result
@@ -244,6 +250,22 @@ function SearchableDropdown({
 }
 
 // ── GlobalFilterBar ───────────────────────────────────────────────────────────
+// Check if a filter dimension applies to the target cards
+// A filter is inapplicable if its table is not referenced in any target card's SQL
+function isFilterApplicable(dim: FilterDim, targetCards: any[]): boolean {
+  if (!dim.table || targetCards.length === 0) return true  // no table info — assume applicable
+  // If any card's SQL references the filter's table, it's applicable
+  return targetCards.some(card => {
+    const sql = (card.sql || card.base_sql || "").toLowerCase()
+    if (!sql) return true  // no SQL — assume applicable
+    // Single table queries using v_maintenance_full are always applicable
+    if (sql.includes("v_maintenance_full")) return true
+    // Check if the filter's table is referenced in the SQL
+    return sql.includes(dim.table.toLowerCase())
+  })
+}
+
+
 export default function GlobalFilterBar() {
   const { charts, updateChart } = useDashboardStore()
   const [dims, setDims] = useState<Record<string, FilterDim>>({})
@@ -383,16 +405,21 @@ export default function GlobalFilterBar() {
       {charts.length > 0 && <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />}
 
       {/* Filter dropdowns */}
-      {Object.entries(dims).map(([key, dim]) => (
-        <SearchableDropdown
-          key={key}
-          dimKey={key}
-          dim={dim}
-          selectedCards={targetCards}
-          onApply={applyFilter}
-          color="#38BDF8"
-        />
-      ))}
+      {Object.entries(dims).map(([key, dim]) => {
+        const applicable = isFilterApplicable(dim, targetCards)
+        return (
+          <div key={key} style={{ opacity: applicable ? 1 : 0.35, pointerEvents: applicable ? "auto" : "none" }}
+            title={applicable ? undefined : `${dim.label} filter not applicable to current cards`}>
+            <SearchableDropdown
+              dimKey={key}
+              dim={dim}
+              selectedCards={targetCards}
+              onApply={applyFilter}
+              color="#38BDF8"
+            />
+          </div>
+        )
+      })}
 
       {/* Clear all */}
       {totalActive > 0 && (
