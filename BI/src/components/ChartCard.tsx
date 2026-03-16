@@ -441,6 +441,35 @@ export default function ChartCard({ card }: Props) {
     } catch { updateChart(card.id, { loading: false }) }
   }
 
+  const toggleFormatFn = async () => {
+    if (!card.wide_sql && !card.long_sql) return
+    const newIsWide = !card.is_wide
+    updateChart(card.id, { loading: true })
+    try {
+      const { toggleFormat } = await import("@/utils/api")
+      const result = await toggleFormat({
+        long_sql: card.long_sql || card.base_sql || card.sql || "",
+        wide_sql: card.wide_sql || "",
+        is_wide: newIsWide,
+        chart_type: card.chart_type,
+        title: card.title,
+        category: card.category,
+        filters: card.filters || {},
+        pivot_col: card.pivot_col || "",
+      })
+      updateChart(card.id, {
+        chart_data: result.chart,
+        chart_type: result.chart_type as any,
+        sql: result.sql,
+        is_wide: newIsWide,
+        available_charts: result.available_charts || card.available_charts,
+        loading: false,
+      })
+    } catch { updateChart(card.id, { loading: false }) }
+  }
+
+  const canToggleFormat = !!(card.wide_sql && card.long_sql)
+
   const saveTitle = () => { updateChart(card.id, { title: titleDraft.trim() || card.title }); setEditingTitle(false) }
 
   let plotData: any = null
@@ -532,6 +561,21 @@ export default function ChartCard({ card }: Props) {
               ))}
 
               <div style={{ width: 1, height: 18, background: "#E8ECF0", margin: "0 2px" }} />
+
+              {canToggleFormat && (
+                <GlassBtn
+                  title={card.is_wide ? "Switch to long format" : "Switch to wide format"}
+                  onClick={toggleFormatFn}
+                  active={card.is_wide}
+                  activeColor={cat.color}
+                  activeGlass={cat.glass}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <rect x="1" y="1" width="5" height="11" rx="1" fill={card.is_wide ? cat.color : "#94A3B8"} opacity={card.is_wide ? 1 : 0.4}/>
+                    <rect x="7" y="1" width="2" height="11" rx="0.5" fill={card.is_wide ? cat.color : "#94A3B8"} opacity={card.is_wide ? 0.7 : 0.3}/>
+                    <rect x="10" y="1" width="2" height="11" rx="0.5" fill={card.is_wide ? cat.color : "#94A3B8"} opacity={card.is_wide ? 0.5 : 0.2}/>
+                  </svg>
+                </GlassBtn>
+              )}
 
               <GlassBtn title="Duplicate" onClick={() => addChart({ ...card, id: uuid(), selected: false, title: card.title + " (copy)" })}>
                 <Copy size={12} />
