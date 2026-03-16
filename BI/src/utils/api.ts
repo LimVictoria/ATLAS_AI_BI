@@ -61,3 +61,15 @@ export const getDQWarnings = () =>
 
 export const reloadData = () =>
   API.post("/chat/data/reload").then(r => r.data)
+
+export const toggleFormat = (params: {
+  long_sql: string
+  wide_sql: string
+  is_wide: boolean
+  chart_type: string
+  title: string
+  category: string
+  filters?: Record<string, any>
+  pivot_col?: string
+}) =>
+  API.post("/chat/toggle_format", params).then(r => r.data)
