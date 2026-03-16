@@ -77,7 +77,7 @@ def _coerce_column(series: pd.Series) -> tuple[pd.Series, str, list]:
     numeric_count = numeric_coerced.notna().sum()
 
     # Try datetime
-    date_coerced = pd.to_datetime(non_null, errors="coerce", infer_datetime_format=True)
+    date_coerced = pd.to_datetime(non_null, errors="coerce")
     date_count = date_coerced.notna().sum()
 
     # Try boolean
@@ -267,6 +267,145 @@ def get_table_names() -> list:
     """Return list of available table names."""
     get_conn()
     return list(_tables_meta.keys())
+
+
+# ── Dynamic filter dimensions ─────────────────────────────────────────────────
+
+# Columns to always skip — pure sequential indexes with no semantic meaning
+_INDEX_NAMES = {"index", "rowid", "row_number", "row_num", "rn", "seq", "sequence"}
+_INDEX_SUFFIXES = ("_idx",)
+
+# Time composite columns — skip as dropdown filters (use for time navigation)
+_TIME_COMPOSITES = {"year_month", "year_quarter", "month_name", "date", "datetime",
+                    "service_date", "created_at", "updated_at", "timestamp"}
+
+# Month name ordering for display
+_MONTH_ORDER = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"]
+
+
+def _is_time_column(col_name: str, series) -> bool:
+    """Detect time-related columns by name pattern."""
+    c = col_name.lower()
+    time_words = {"year", "month", "quarter", "week", "date", "day", "period",
+                  "time", "hour", "minute", "second"}
+    return any(w in c for w in time_words)
+
+
+def _should_skip(col_name: str) -> bool:
+    """Return True if column should be skipped as a filter."""
+    c = col_name.lower()
+    if c in _INDEX_NAMES:
+        return True
+    if any(c.endswith(s) for s in _INDEX_SUFFIXES):
+        return True
+    if c in _TIME_COMPOSITES:
+        return True
+    return False
+
+
+def get_filter_dimensions() -> dict:
+    """
+    Auto-discover all filter-eligible columns from all loaded tables.
+    Returns a dict of {dim_key: {label, column, table, type, cast, options, is_time}}
+    ready for use by filters.py.
+    Deduplicates by column name — largest table wins.
+    """
+    get_conn()  # ensure loaded
+
+    seen: dict = {}  # col_name → (table_name, n_rows, series)
+
+    for table_name, meta in _tables_meta.items():
+        df = meta["df"]
+        n_rows = len(df)
+
+        for col in df.columns:
+            if _should_skip(col):
+                continue
+
+            series = df[col]
+            n_distinct = series.nunique()
+
+            if n_distinct < 2:
+                continue  # single value — useless filter
+
+            # Dedup — keep the largest table's version
+            if col in seen:
+                if n_rows <= seen[col][1]:
+                    continue
+            seen[col] = (table_name, n_rows, series, n_distinct)
+
+    result = {}
+
+    # Always add quarter if any month column exists
+    has_month = any(
+        c.lower() in {"month", "month_num", "month_number"}
+        for meta in _tables_meta.values()
+        for c in meta["df"].columns
+    )
+    if has_month:
+        result["quarter"] = {
+            "label":   "Quarter",
+            "column":  "month",
+            "table":   None,
+            "type":    "select",
+            "cast":    "int",
+            "quarter": True,
+            "options": ["1", "2", "3", "4"],
+            "is_time": True,
+        }
+
+    for col, (table_name, n_rows, series, n_distinct) in seen.items():
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        is_datetime = pd.api.types.is_datetime64_any_dtype(series)
+        is_time = _is_time_column(col, series)
+
+        if is_datetime:
+            continue  # date range picker — future enhancement
+
+        # Determine cast
+        cast = None
+        if is_numeric and not is_time:
+            cast = "int" if pd.api.types.is_integer_dtype(series) else "float"
+        elif is_numeric and is_time:
+            cast = "int"
+
+        # Build options — all distinct values
+        try:
+            if is_numeric:
+                raw_opts = sorted(series.dropna().unique().tolist())
+                options = [str(int(v)) if cast == "int" else str(v) for v in raw_opts]
+            else:
+                raw_opts = sorted(series.dropna().astype(str).unique().tolist())
+                # Special case: month names — sort by calendar order
+                if all(v in _MONTH_ORDER for v in raw_opts):
+                    options = [m for m in _MONTH_ORDER if m in raw_opts]
+                else:
+                    options = raw_opts
+        except Exception:
+            options = []
+
+        if not options:
+            continue
+
+        # Pretty label
+        label = col.replace("_", " ").title()
+
+        # dim key — use column name directly so build_where_from_filters can match
+        dim_key = col
+
+        result[dim_key] = {
+            "label":   label,
+            "column":  col,
+            "table":   table_name,
+            "type":    "select",
+            "cast":    cast,
+            "options": options,
+            "is_time": is_time,
+            "n_distinct": n_distinct,
+        }
+
+    return result
 
 
 # ── Reload (for /data/reload endpoint and file watcher) ───────────────────────
