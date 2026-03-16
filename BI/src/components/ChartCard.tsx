@@ -327,14 +327,27 @@ function CardFilterPanel({ filters, color, glass, onFilterChange }: {
 }
 
 // ── Code back-face ────────────────────────────────────────────────────────────
-function CodeFace({ metricId, sql, baseSql, color, light }: { metricId: string; sql?: string; baseSql?: string; color: string; light: string }) {
-  const isFiltered = sql && baseSql && sql !== baseSql
+function CodeFace({ metricId, sql, baseSql, color, light, filters }: {
+  metricId: string; sql?: string; baseSql?: string
+  color: string; light: string; filters?: Record<string, any>
+}) {
+  const isFiltered = !!(sql && baseSql && sql !== baseSql) ||
+    !!(filters && Object.keys(filters).length > 0)
   const [tab, setTab] = useState<"sql" | "python">("sql")
   const [copied, setCopied] = useState(false)
+
+  // Active filter summary for display
+  const filterSummary = filters && Object.keys(filters).length > 0
+    ? Object.entries(filters)
+        .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : true))
+        .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(",") : v}`)
+        .join(" · ")
+    : ""
+
   // Recompute on every render so SQL updates when filters change
   const sqlText  = sql || `-- SQL not available for: ${metricId}\n-- Ask the AI to regenerate this chart`
   const pyText   = sql
-    ? `import pandas as pd\nimport plotly.express as px\nfrom db.duckdb_session import run_query\n\n# SQL includes active filters\ndf = run_query("""\n${sql}\n""")\nprint(df.head())\n\nfig = px.bar(df, x=df.columns[0], y=df.columns[1], title="${metricId.replace(/_/g, ' ')}")\nfig.show()`
+    ? `import pandas as pd\nimport plotly.express as px\nfrom db.duckdb_session import run_query\n\n# Active filters: ${filterSummary || "none"}\ndf = run_query("""\n${sql}\n""")\nprint(df.head())\n\nfig = px.bar(df, x=df.columns[0], y=df.columns[1], title="${metricId.replace(/_/g, ' ')}")\nfig.show()`
     : `# Ask the AI to regenerate this chart to see its SQL`
   const code = tab === "sql" ? sqlText : pyText
 
@@ -378,9 +391,10 @@ function CodeFace({ metricId, sql, baseSql, color, light }: { metricId: string; 
       {/* Footer note */}
       <div style={{ padding: "6px 14px 8px", borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 10, color: "#334155" }}>
         metric_id: <span style={{ color: "#38BDF8" }}>{metricId}</span>
-        <span style={{ marginLeft: 12, color: "#1E293B" }}>· table: </span>
-        <span style={{ color: "#86EFAC" }}>v_maintenance_full</span>
-        {isFiltered && (
+        {isFiltered && filterSummary && (
+          <span style={{ marginLeft: 12, color: "#F59E0B", fontWeight: 500 }}>· {filterSummary}</span>
+        )}
+        {isFiltered && !filterSummary && (
           <span style={{ marginLeft: 12, color: "#F59E0B", fontWeight: 600 }}>· filters applied</span>
         )}
       </div>
@@ -738,7 +752,7 @@ export default function ChartCard({ card }: Props) {
 
       {/* ── Body ── */}
       {flipped ? (
-        <CodeFace metricId={card.metric_id} sql={card.sql} baseSql={card.base_sql} color={cat.color} light={cat.light} />
+        <CodeFace metricId={card.metric_id} sql={card.sql} baseSql={card.base_sql} color={cat.color} light={cat.light} filters={card.filters} />
       ) : (
         <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {card.loading ? (
