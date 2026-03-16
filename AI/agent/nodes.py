@@ -380,6 +380,15 @@ Return ONLY valid JSON — no markdown, no code blocks:
   "narrative_hint": "One sentence about what this shows"
 }}
 
+STAR SCHEMA SQL RULES — CRITICAL:
+- ALWAYS use table aliases in JOIN queries: FROM fact_maintenance_event f JOIN dim_truck dt ON f.truck_id = dt.truck_id
+- ALWAYS qualify every column with its table alias: dt.brand, f.total_cost_myr, d.year — NEVER use bare column names in JOIN queries
+- This prevents ambiguous column errors when filters are applied
+- For simple single-table queries, use v_maintenance_full directly (it has all columns pre-joined)
+- Only write JOIN queries when the user specifically needs columns not in v_maintenance_full (e.g. dim_workshop.state)
+- CORRECT: SELECT dt.brand, ROUND(SUM(f.total_cost_myr), 2) AS total_cost FROM fact_maintenance_event f JOIN dim_truck dt ON f.truck_id = dt.truck_id GROUP BY dt.brand
+- WRONG: SELECT brand, SUM(total_cost_myr) FROM fact_maintenance_event JOIN dim_truck ON fact_maintenance_event.truck_id = dim_truck.truck_id GROUP BY brand
+
 CHART TYPE GUIDE:
 - line: when query groups by year_month, year_quarter, month_name (time series)
 - bar: category comparisons (brand, component, workshop)
