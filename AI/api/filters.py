@@ -26,10 +26,15 @@ _primary_table: str = ""
 
 
 def _get_dims() -> dict:
-    """Get filter dimensions, using cache for performance."""
+    """Get filter dimensions, using cache for performance.
+    Always populates cache — never returns empty on first call."""
     global _dims_cache, _primary_table
     if _dims_cache is None:
-        _dims_cache = get_filter_dimensions()
+        try:
+            _dims_cache = get_filter_dimensions()
+        except Exception as e:
+            print(f"[filters] get_filter_dimensions failed: {e}")
+            _dims_cache = {}
         # Find primary table (largest one) for time shortcuts
         try:
             from db.duckdb_session import _tables_meta
@@ -37,6 +42,7 @@ def _get_dims() -> dict:
                 _primary_table = max(_tables_meta.items(), key=lambda x: len(x[1]["df"]))[0]
         except Exception:
             _primary_table = ""
+        print(f"[filters] loaded {len(_dims_cache)} filter dimensions, primary_table={_primary_table!r}")
     return _dims_cache
 
 
@@ -95,12 +101,20 @@ def build_where_from_filters(filters: dict) -> str:
         col = cfg["column"] if cfg else dim
         cast = cfg.get("cast") if cfg else None
 
-        def fmt(v):
-            if cast in {"int", "float"}:
+        def fmt(v, _cast=cast):
+            # If cast known from schema, use it
+            if _cast in {"int", "float"}:
                 try:
-                    return str(int(float(v))) if cast == "int" else str(float(v))
+                    return str(int(float(v))) if _cast == "int" else str(float(v))
                 except Exception:
                     return f"'{v}'"
+            # Fallback: auto-detect — if value looks like a pure integer, don't quote it
+            try:
+                int_v = int(str(v).strip())
+                if str(int_v) == str(v).strip():
+                    return str(int_v)
+            except (ValueError, TypeError):
+                pass
             return f"'{v}'"
 
         values_list = value if isinstance(value, list) else [value]
