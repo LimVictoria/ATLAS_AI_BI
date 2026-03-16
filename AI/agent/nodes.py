@@ -568,6 +568,9 @@ async def narrator_node(state: AgentState) -> AgentState:
     system = f"""You are ATLAS, a fleet maintenance analyst. Answer the user's question using the board data below.
 Be specific — use actual numbers from data_preview. 2-3 sentences max.
 Do NOT suggest adding a chart. Do NOT print a markdown table.
+IMPORTANT: If a card has ACTIVE_FILTERS, your answer must reflect those filters.
+For example if year=2023 is active, say "In 2023, ..." not general statements.
+Always ground your answer in what the user is currently viewing — the filtered data, not all data.
 
 {state.get("board_context", "")}
 """
@@ -603,6 +606,7 @@ async def board_node(state: AgentState) -> AgentState:
         card_sql = ""
         card_chart_type = "table"
         card_title = "Query Result"
+        card_active_filters = ""
         for line in board.split("\n"):
             if f"id={card_id}" in line:
                 ct_match = re.search(r"chart_type=(\w+)", line)
@@ -611,12 +615,17 @@ async def board_node(state: AgentState) -> AgentState:
                 title_match = re.search(r"title='([^']+)'", line)
                 if title_match:
                     card_title = title_match.group(1)
+                filters_match = re.search(r"ACTIVE_FILTERS: ([^|\n]+)", line)
+                if filters_match:
+                    card_active_filters = filters_match.group(1).strip()
             if "data_preview" in line and card_sql == "":
                 pass  # data preview only, not full SQL
 
+        filter_notice = f"\nACTIVE FILTERS ON THIS CARD: {card_active_filters}" if card_active_filters else "\nACTIVE FILTERS ON THIS CARD: none"
+
         # Ask LLM: what kind of modification does the user want?
         system = f"""You are ATLAS. A card is selected on the BI board.
-SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}
+SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}{filter_notice}
 
 {board}
 
@@ -624,20 +633,27 @@ SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}
 
 The user wants to modify this card. Classify their request into exactly one of these:
 
-1. CHART TYPE CHANGE — user wants a different visualisation (bar, line, pie, table, heatmap etc)
-   → return {{"action": "chart_type", "chart_type": "..."}}
+1. CHART TYPE CHANGE - user wants a different visualisation (bar, line, pie, table, heatmap etc)
+   -> return {{"action": "chart_type", "chart_type": "..."}}
 
-2. FILTER UI — user wants to add/show a filter dropdown on the card (e.g. "add a month filter",
-   "add a brand filter", "I want to filter by year"). Do NOT hardcode a value — just expose the filter.
-   → return {{"action": "filter_ui", "dim": "month"}}
-   Valid dims: brand, year, month, quarter, fleet_segment, maintenance_type, criticality_level, workshop_type, region, component_category
+2. APPLY FILTER WITH VALUE - user wants to filter by a specific value
+   Examples: "filter by 2023", "show only Scania", "filter to 2022 and 2023", "remove filter", "clear filter"
+   -> return {{"action": "apply_filter", "dim": "year", "values": ["2023"]}}
+   Use the exact column name as dim. values must be a list of strings. Empty list to clear.
+   More examples:
+   "show only Scania and Volvo" -> {{"action": "apply_filter", "dim": "brand", "values": ["Scania", "Volvo"]}}
+   "filter to scheduled" -> {{"action": "apply_filter", "dim": "maintenance_type", "values": ["Scheduled PM"]}}
+   "clear year filter" -> {{"action": "apply_filter", "dim": "year", "values": []}}
 
-3. SQL DATA CHANGE — user wants different data (more columns, different grouping, pivot, aggregation)
-   → Write a NEW SQL query and return:
-   {{"action": "sql", "sql": "SELECT ...", "chart_type": "table", "title": "..."}}
+3. FILTER DIMENSION ONLY - user asks to add a filter but does NOT specify a value
+   Examples: "add a brand filter", "I want to filter by year"
+   -> return {{"action": "filter_ui", "dim": "brand"}}
 
-4. UNCLEAR — if you are not sure what the user wants, ask for clarification
-   → return {{"action": "clarify", "question": "..."}}
+4. SQL DATA CHANGE - user wants different data (more columns, different grouping, pivot, aggregation)
+   -> return {{"action": "sql", "sql": "SELECT ...", "chart_type": "table", "title": "..."}}
+
+5. UNCLEAR - not sure what the user wants
+   -> return {{"action": "clarify", "question": "..."}}
 
 Return ONLY valid JSON, no markdown. Think carefully before choosing."""
 
@@ -651,12 +667,26 @@ Return ONLY valid JSON, no markdown. Think carefully before choosing."""
                 narrative = f"Done — switched to {parsed['chart_type']} chart."
                 return {**state, "narrative": narrative, "ui_actions": [ui_action]}
 
-            elif parsed.get("action") == "filter_ui":
-                # User wants a filter dropdown added — emit show_filter action
-                dim = parsed.get("dim", "")
-                ui_action = {"action": "show_filter", "card_id": card_id, "dim": dim}
-                narrative = f"I've opened the {dim.replace('_', ' ')} filter on this card — select the values you want."
+            elif parsed.get("action") == "apply_filter":
+                dim    = parsed.get("dim", "")
+                values = parsed.get("values", [])
+                ui_action = {
+                    "action":  "apply_filter",
+                    "card_id": card_id,
+                    "dim":     dim,
+                    "values":  values,
+                }
+                if values:
+                    val_str = ", ".join(str(v) for v in values)
+                    narrative = f"Done — filtered {dim.replace('_', ' ')} to {val_str} on this card."
+                else:
+                    narrative = f"Done — cleared the {dim.replace('_', ' ')} filter on this card."
                 return {**state, "narrative": narrative, "ui_actions": [ui_action]}
+
+            elif parsed.get("action") == "filter_ui":
+                dim = parsed.get("dim", "")
+                narrative = f"Use the {dim.replace('_', ' ')} filter in the filter bar at the top to select values."
+                return {**state, "narrative": narrative, "ui_actions": []}
 
             elif parsed.get("action") == "clarify":
                 # LLM isn't sure — ask the user
