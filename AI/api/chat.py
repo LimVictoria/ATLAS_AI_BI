@@ -34,14 +34,40 @@ def build_board_context(board_context) -> str:
     lines = [f"\nBOARD_CONTEXT: {len(board_context.charts_on_canvas)} chart(s) on canvas:"]
     for c in board_context.charts_on_canvas:
         sel = " ← SELECTED" if c.id in (board_context.selected_ids or []) else ""
+        # Build active filters description for AI context
+        active_filters = c.filters or {}
+        filter_desc = ""
+        if active_filters:
+            parts = [f"{k}={v}" for k, v in active_filters.items() if v]
+            filter_desc = f" | ACTIVE_FILTERS: {', '.join(parts)}"
+
         lines.append(
             f"  - id={c.id} | title='{c.title}' | chart_type={c.chart_type}"
-            f" | filters={json.dumps(c.filters or {})}{sel}"
+            f"{filter_desc}{sel}"
         )
-        # Fetch live data preview using card's stored SQL
+
+        # Fetch live data preview — use filtered SQL so AI sees same data as user
         try:
             from agent.nodes import run_query, _clean_df
+            from api.filters import build_where_from_filters
+            import re as _re2
+
+            # Use card.sql (which has filters applied) for the preview
             card_sql = c.sql or ""
+            if not card_sql and c.base_sql:
+                # Re-apply filters to base_sql for preview
+                card_sql = c.base_sql
+                if active_filters:
+                    where = build_where_from_filters(active_filters)
+                    if where:
+                        new_cond = _re2.sub(r'(?i)^\s*WHERE\s+', '', where).strip()
+                        if _re2.search(r'WHERE', card_sql, _re2.IGNORECASE):
+                            gm = _re2.search(r'(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)', card_sql, _re2.IGNORECASE)
+                            card_sql = (card_sql[:gm.start()].rstrip() + f' AND {new_cond} ' + card_sql[gm.start():]) if gm else card_sql.rstrip() + f' AND {new_cond}'
+                        else:
+                            gm = _re2.search(r'(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)', card_sql, _re2.IGNORECASE)
+                            card_sql = (card_sql[:gm.start()].rstrip() + f' WHERE {new_cond} ' + card_sql[gm.start():]) if gm else card_sql.rstrip() + f' WHERE {new_cond}'
+
             if card_sql:
                 df   = run_query(card_sql)
                 df   = _clean_df(df)
@@ -50,7 +76,7 @@ def build_board_context(board_context) -> str:
                     ", ".join(f"{k}={v}" for k, v in row.items())
                     for row in rows
                 )
-                lines.append(f"    data_preview: {preview}")
+                lines.append(f"    data_preview (filtered): {preview}")
         except Exception as preview_err:
             print(f"[board_context] preview failed for card {c.id}: {preview_err}")
             pass
@@ -297,6 +323,8 @@ def rerender_chart(req: RerenderRequest):
     """Re-render a card with a different chart type and/or filters using stored SQL."""
     from agent.nodes import run_query, _clean_df, _build_chart, _infer_meta, _smart_available_charts
     from api.filters import build_where_from_filters
+
+    print(f"[rerender] sql={req.sql[:80]!r} filters={req.filters} chart_type={req.chart_type}")
 
     # Inject UI filters into SQL — APPEND to existing WHERE (never strip intent filters)
     import re as _re
