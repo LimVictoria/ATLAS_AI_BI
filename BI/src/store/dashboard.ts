@@ -26,7 +26,7 @@ export interface ChartCard {
 
 export interface ChatMessage {
   id: string
-  role: "user" | "assistant"
+  role: "user" | "assistant" | "system"
   text: string
   timestamp: Date
   loading?: boolean
@@ -168,7 +168,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       const resp = await getChatHistory(get().userId)
       const msgs = (resp.messages || []).map((m: any, i: number) => ({
         id: `hist-${i}`,
-        role: m.role as "user" | "assistant",
+        role: m.role as "user" | "assistant" | "system",
         text: m.content || "",
         timestamp: new Date(m.created_at || Date.now()),
         loading: false,
