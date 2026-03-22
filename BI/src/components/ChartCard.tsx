@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic"
 import {
   X, Copy, BarChart2, GripHorizontal, Pencil, Check,
-  ChevronDown, Code2, RotateCcw
+  ChevronDown, Code2, RotateCcw, SlidersHorizontal
 } from "lucide-react"
 import { useDashboardStore, ChartCard as ChartCardType, ChartType } from "@/store/dashboard"
 // runMetric removed — ChartCard now uses rerenderChart via card.sql
@@ -668,6 +668,7 @@ export default function ChartCard({ card }: Props) {
     } catch { updateChart(card.id, { loading: false }) }
   }
 
+  const [showFilters, setShowFilters] = useState(true)
   const canToggleFormat = !!(card.wide_sql && card.long_sql)
 
   const saveTitle = () => { updateChart(card.id, { title: titleDraft.trim() || card.title }); setEditingTitle(false) }
@@ -751,6 +752,15 @@ export default function ChartCard({ card }: Props) {
                 </GlassBtn>
               ))}
 
+              <GlassBtn
+                onClick={() => setShowFilters((f: boolean) => !f)}
+                active={showFilters}
+                activeColor={cat.color}
+                activeGlass={cat.glass}
+                title={showFilters ? "Hide filters" : "Show filters"}>
+                <SlidersHorizontal size={12} />
+              </GlassBtn>
+
               <div style={{ width: 1, height: 18, background: "#E8ECF0", margin: "0 2px" }} />
 
               {canToggleFormat && (
@@ -780,8 +790,8 @@ export default function ChartCard({ card }: Props) {
         </div>
       </div>
 
-      {/* ── Per-card filter strip — always visible, grouped by category ── */}
-      {!flipped && (
+      {/* ── Per-card filter strip — toggled by SlidersHorizontal button ── */}
+      {!flipped && showFilters && (
         <CardFilterPanel
           sql={card.sql || card.base_sql || ""}
           filters={card.filters || {}}
