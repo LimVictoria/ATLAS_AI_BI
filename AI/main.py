@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from api.query import router as query_router
 from api.filters import router as filters_router
 from api.chat import router as chat_router
+from api.metrics import router as metrics_router
 
 load_dotenv()
 
@@ -54,36 +55,19 @@ async def add_cors_fallback(request: Request, call_next):
 app.include_router(query_router)
 app.include_router(filters_router)
 app.include_router(chat_router)
+app.include_router(metrics_router)
 
 
 @app.on_event("startup")
 async def startup_test():
-    """Load data, build schema, run graph test on startup."""
+    """Run a test invocation on startup to catch errors early."""
     import traceback
-
-    # Step 1: load data and generate schema
-    print("[startup] Loading data and generating schema guide...")
-    try:
-        from db.duckdb_session import get_conn, get_table_names, get_dq_warnings
-        get_conn()
-        tables = get_table_names()
-        warnings = get_dq_warnings()
-        print(f"[startup] Loaded {len(tables)} tables: {tables}")
-        if warnings:
-            print(f"[startup] Data quality warnings ({len(warnings)}):")
-            for w in warnings:
-                print(f"  · {w}")
-        else:
-            print("[startup] No data quality issues detected")
-    except Exception as e:
-        print(f"[startup] Data load error: {traceback.format_exc()}")
-
-    # Step 2: test graph
     print("[startup] Testing graph initialization...")
     try:
         from agent.nodes import get_graph, AgentState
         graph = get_graph()
         print("[startup] Graph built OK")
+        # Test a minimal invocation
         test_state: AgentState = {
             "user_message": "test",
             "history": [],
@@ -103,7 +87,6 @@ async def startup_test():
             "chart_category": "General",
             "narrative": "",
             "ui_actions": [],
-            "replace_card_id": None,
         }
         result = await graph.ainvoke(test_state)
         print(f"[startup] Test invocation OK — narrative: {result.get('narrative','')[:80]}")
