@@ -411,98 +411,98 @@ def derive_source_sql(view_sql: str) -> str:
     """
     Derive a star schema source SQL from a v_maintenance_full query.
     Returns the equivalent JOIN query using source tables with aliases.
-    Best-effort — annotates ambiguous columns with comments.
     """
     import re as _re
 
-    # Only process queries that use v_maintenance_full
     if "v_maintenance_full" not in view_sql.lower():
-        return view_sql  # already uses source tables or unknown
+        return view_sql
 
     col_map = _get_col_source_table()
 
-    # Extract SELECT, WHERE, GROUP BY, ORDER BY, HAVING parts
-    select_match = _re.search(r'SELECT\s+(.+?)\s+FROM', view_sql, _re.IGNORECASE | _re.DOTALL)
-    where_match  = _re.search(r'WHERE\s+(.+?)(?=GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|$)', view_sql, _re.IGNORECASE | _re.DOTALL)
-    group_match  = _re.search(r'GROUP\s+BY\s+(.+?)(?=ORDER\s+BY|HAVING|LIMIT|$)', view_sql, _re.IGNORECASE | _re.DOTALL)
-    order_match  = _re.search(r'ORDER\s+BY\s+(.+?)(?=LIMIT|$)', view_sql, _re.IGNORECASE | _re.DOTALL)
+    # Use proper raw strings for regex word boundaries
+    pat_select = _re.compile(r"SELECT\s+(.+?)\s+FROM", _re.IGNORECASE | _re.DOTALL)
+    pat_where  = _re.compile(r"WHERE\s+(.+?)(?=GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
+    pat_group  = _re.compile(r"GROUP\s+BY\s+(.+?)(?=ORDER\s+BY|HAVING|LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
+    pat_order  = _re.compile(r"ORDER\s+BY\s+(.+?)(?=LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
+    pat_words  = _re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*")
+    pat_qualified = _re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*\.[a-zA-Z_][a-zA-Z_0-9]*")
 
+    select_match = pat_select.search(view_sql)
     if not select_match:
         return view_sql
 
-    # Find which dim tables are needed based on columns used
-    # Scan the full SQL for column names
-    all_words = set(_re.findall(r'([a-z_][a-z_0-9]*)', view_sql.lower()))
+    where_match = pat_where.search(view_sql)
+    group_match = pat_group.search(view_sql)
+    order_match = pat_order.search(view_sql)
+
+    # Find needed dim tables by scanning ALL words in SQL
+    all_words = set(w.lower() for w in pat_words.findall(view_sql))
     needed_dims = set()
     for col in all_words:
         src = col_map.get(col)
         if src and src != "fact_maintenance_event" and src in _STAR_JOIN_MAP:
             needed_dims.add(src)
 
-    # Build alias map for qualified column replacement
+    # Build alias map
     alias_map = {"fact_maintenance_event": "f"}
     for dim in needed_dims:
         alias_map[dim] = _STAR_JOIN_MAP[dim]["alias"]
 
-    def qualify_col(col_name: str) -> str:
-        """Prefix a bare column name with its table alias."""
-        src = col_map.get(col_name.lower())
+    SQL_KEYWORDS = {
+        "from","where","group","by","order","having","limit","and","or","not",
+        "in","like","between","is","null","true","false","as","on","join",
+        "select","sum","avg","count","max","min","round","nullif","case",
+        "when","then","else","end","asc","desc","distinct","inner","left",
+        "right","outer","cross","using","over","partition","window"
+    }
+
+    def qualify_token(word: str) -> str:
+        src = col_map.get(word.lower())
         if src and src in alias_map:
-            return f"{alias_map[src]}.{col_name}"
-        return col_name
+            return f"{alias_map[src]}.{word}"
+        return word
 
     def qualify_expr(expr: str) -> str:
-        """Qualify all bare column names in an expression."""
-        # Replace bare column names (not already qualified with a dot)
-        def replace_col(m):
-            word = m.group(0)
-            # Skip if already qualified, skip SQL keywords and numbers
-            keywords = {"from","where","group","by","order","having","limit","and","or","not",
-                        "in","like","between","is","null","true","false","as","on","join",
-                        "select","sum","avg","count","max","min","round","nullif","case",
-                        "when","then","else","end","asc","desc","distinct"}
-            if word.lower() in keywords:
-                return word
-            if word.isdigit():
-                return word
-            return qualify_col(word)
-        return _re.sub(r'([a-zA-Z_][a-zA-Z_0-9]*)(?!\s*\.)', replace_col, expr)
+        """Qualify bare column names — skip keywords, numbers, already-qualified names."""
+        # Find already qualified names and protect them
+        qualified_spans = set()
+        for m in pat_qualified.finditer(expr):
+            for i in range(m.start(), m.end()):
+                qualified_spans.add(i)
+
+        result = []
+        i = 0
+        while i < len(expr):
+            if i in qualified_spans:
+                result.append(expr[i])
+                i += 1
+                continue
+            # Try to match a word token
+            m = _re.match(r"[a-zA-Z_][a-zA-Z_0-9]*", expr[i:])
+            if m:
+                word = m.group(0)
+                if word.lower() not in SQL_KEYWORDS and not word.isdigit():
+                    result.append(qualify_token(word))
+                else:
+                    result.append(word)
+                i += len(word)
+            else:
+                result.append(expr[i])
+                i += 1
+        return "".join(result)
 
     # Build FROM + JOINs
     joins = ["FROM fact_maintenance_event f"]
-    for dim in sorted(needed_dims):  # sorted for determinism
+    for dim in sorted(needed_dims):
         j = _STAR_JOIN_MAP[dim]
         joins.append(f"JOIN {dim} {j['alias']} ON {j['fk']}")
 
-    # Qualify SELECT
-    select_raw = select_match.group(1)
-    select_qualified = qualify_expr(select_raw)
+    select_qualified = qualify_expr(select_match.group(1))
+    where_clause  = f"WHERE {qualify_expr(where_match.group(1).strip())}" if where_match else ""
+    group_clause  = f"GROUP BY {qualify_expr(group_match.group(1).strip())}" if group_match else ""
+    order_clause  = f"ORDER BY {qualify_expr(order_match.group(1).strip())}" if order_match else ""
 
-    # Qualify WHERE
-    where_clause = ""
-    if where_match:
-        where_qualified = qualify_expr(where_match.group(1).strip())
-        where_clause = f"WHERE {where_qualified}"
-
-    # Qualify GROUP BY
-    group_clause = ""
-    if group_match:
-        group_qualified = qualify_expr(group_match.group(1).strip())
-        group_clause = f"GROUP BY {group_qualified}"
-
-    # Qualify ORDER BY
-    order_clause = ""
-    if order_match:
-        order_qualified = qualify_expr(order_match.group(1).strip())
-        order_clause = f"ORDER BY {order_qualified}"
-
-    # Assemble
-    parts = [
-        f"-- Star schema equivalent (for reference)",
-        f"SELECT {select_qualified}",
-    ] + joins + [
-        p for p in [where_clause, group_clause, order_clause] if p
-    ]
+    parts = ["-- Star schema equivalent (for data engineers)", f"SELECT {select_qualified}"]           + joins           + [p for p in [where_clause, group_clause, order_clause] if p]
 
     return "\n".join(parts)
 
