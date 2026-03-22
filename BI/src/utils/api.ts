@@ -58,3 +58,20 @@ export const rerenderChart = (
 
 export const deriveSql = (sql: string) =>
   API.post("/chat/derive_source_sql", { sql }).then(r => r.data)
+export const getDQWarnings = () =>
+  API.get("/chat/data/warnings").then(r => r.data)
+
+export const reloadData = () =>
+  API.post("/chat/data/reload").then(r => r.data)
+
+export const toggleFormat = (params: {
+  long_sql: string
+  wide_sql: string
+  is_wide: boolean
+  chart_type: string
+  title: string
+  category: string
+  filters?: Record<string, any>
+  pivot_col?: string
+}) =>
+  API.post("/chat/toggle_format", params).then(r => r.data)
