@@ -171,6 +171,8 @@ def _build_schema_guide(tables: dict) -> str:
         "AVAILABLE TABLES (query using DuckDB SQL syntax):",
         "",
         "CRITICAL SQL RULES:",
+        "- ALWAYS query v_maintenance_full for ALL analysis — it is the comprehensive pre-joined view",
+        "- NEVER query source tables (fact_maintenance_event, dim_truck, dim_component, dim_workshop) directly",
         "- NEVER invent column names — only use names listed below",
         "- NEVER use strftime() — use pre-extracted year/month columns directly",
         "- Use ROUND(value, 2) for monetary/float values",
@@ -275,13 +277,169 @@ def get_table_names() -> list:
 _INDEX_NAMES = {"index", "rowid", "row_number", "row_num", "rn", "seq", "sequence"}
 _INDEX_SUFFIXES = ("_idx",)
 
-# Time composite columns — skip as dropdown filters (use for time navigation)
-_TIME_COMPOSITES = {"year_month", "year_quarter", "month_name", "date", "datetime",
-                    "service_date", "created_at", "updated_at", "timestamp"}
+# Time composite columns — skip as raw dropdown filters but extract year/month/quarter
+_TIME_COMPOSITES = {"year_month", "year_quarter", "month_name"}
+
+# Raw date columns — keep as filter AND extract year/month/quarter
+_DATE_SUFFIXES = ("_date", "_at", "_time", "_datetime", "_on", "_dt")
 
 # Month name ordering for display
 _MONTH_ORDER = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"]
+
+# Semantic group mapping — column name patterns → group label
+# Used for grouping filters on the card UI
+_GROUP_MAP = {
+    # Vehicle/Truck
+    "brand":              "Vehicle",
+    "fleet_segment":      "Vehicle",
+    "model":              "Vehicle",
+    "engine_type":        "Vehicle",
+    "plate_number":       "Vehicle",
+    "gross_weight_kg":    "Vehicle",
+    "home_state":         "Vehicle",
+    "year_manufactured":  "Vehicle",
+    "current_mileage_km": "Vehicle",
+    "is_active":          "Vehicle",
+    # Component
+    "component_name":     "Component",
+    "component_category": "Component",
+    "subsystem":          "Component",
+    "expected_lifespan_km": "Component",
+    "unit_cost_myr":      "Component",
+    # Workshop
+    "workshop_name":      "Workshop",
+    "workshop_type":      "Workshop",
+    "region":             "Workshop",
+    "city":               "Workshop",
+    "state":              "Workshop",
+    "capacity_bays":      "Workshop",
+    "is_authorised_scania": "Workshop",
+    "workshop_state":     "Workshop",
+    # Event/Maintenance
+    "maintenance_type":   "Event",
+    "failure_type":       "Event",
+    "criticality_level":  "Event",
+    "is_unscheduled":     "Event",
+    "warranty_covered":   "Event",
+    "technician_count":   "Event",
+    # Date/Time
+    "year":               "Date",
+    "month":              "Date",
+    "week":               "Date",
+    "day_of_week":        "Date",
+    "is_weekend":         "Date",
+    "is_public_holiday":  "Date",
+    "quarter":            "Date",
+    # Numeric/Cost
+    "total_cost_myr":     "Numeric",
+    "parts_cost_myr":     "Numeric",
+    "labour_cost_myr":    "Numeric",
+    "downtime_hours":     "Numeric",
+    "labour_hours":       "Numeric",
+    "mileage_at_event":   "Numeric",
+}
+
+def _get_group(col_name: str) -> str:
+    """Return semantic group for a column."""
+    c = col_name.lower()
+    if c in _GROUP_MAP:
+        return _GROUP_MAP[c]
+    # Pattern-based fallback
+    if any(w in c for w in ["brand","fleet","model","engine","plate","vehicle","truck","mileage","weight"]):
+        return "Vehicle"
+    if any(w in c for w in ["component","subsystem","lifespan","part"]):
+        return "Component"
+    if any(w in c for w in ["workshop","region","city","state","capacity","dealer"]):
+        return "Workshop"
+    if any(w in c for w in ["maintenance","failure","criticality","warranty","technician","unscheduled"]):
+        return "Event"
+    if any(w in c for w in ["year","month","week","day","date","quarter","holiday","weekend"]):
+        return "Date"
+    if any(w in c for w in ["cost","hours","amount","rate","count","km","myr"]):
+        return "Numeric"
+    return "Other"
+
+def _is_date_col(col_name: str, series) -> bool:
+    """Return True if column is a date/datetime column for extraction."""
+    c = col_name.lower()
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return True
+    return any(c.endswith(s) for s in _DATE_SUFFIXES)
+
+def _extract_date_dims(col: str, table_name: str, series) -> list:
+    """Extract year/month/quarter filter dims from a date column."""
+    dims = []
+    col_lower = col.lower()
+    # Build context-aware label prefix e.g. service_date -> "Service Date"
+    label_prefix = col.replace("_", " ").title()
+
+    try:
+        if pd.api.types.is_datetime64_any_dtype(series):
+            years  = sorted(series.dt.year.dropna().unique().astype(int).tolist())
+            months = sorted(series.dt.month.dropna().unique().astype(int).tolist())
+        else:
+            parsed = pd.to_datetime(series, errors="coerce")
+            if parsed.notna().sum() < len(series) * 0.5:
+                return []
+            years  = sorted(parsed.dt.year.dropna().unique().astype(int).tolist())
+            months = sorted(parsed.dt.month.dropna().unique().astype(int).tolist())
+    except Exception:
+        return []
+
+    if not years:
+        return []
+
+    # Year
+    dims.append({
+        "label":        f"{label_prefix} Year",
+        "column":       col,
+        "table":        table_name,
+        "type":         "select",
+        "cast":         "int",
+        "options":      [str(y) for y in years],
+        "is_time":      True,
+        "n_distinct":   len(years),
+        "date_extract": "year",
+        "date_col":     col,
+        "group":        "Date",
+    })
+
+    # Month
+    month_names = ["January","February","March","April","May","June",
+                   "July","August","September","October","November","December"]
+    month_opts = [month_names[m-1] for m in months if 1 <= m <= 12]
+    dims.append({
+        "label":        f"{label_prefix} Month",
+        "column":       col,
+        "table":        table_name,
+        "type":         "select",
+        "cast":         "int",
+        "options":      month_opts,
+        "is_time":      True,
+        "n_distinct":   len(months),
+        "date_extract": "month",
+        "date_col":     col,
+        "group":        "Date",
+    })
+
+    # Quarter
+    dims.append({
+        "label":        f"{label_prefix} Quarter",
+        "column":       col,
+        "table":        table_name,
+        "type":         "select",
+        "cast":         "int",
+        "options":      ["1", "2", "3", "4"],
+        "is_time":      True,
+        "n_distinct":   4,
+        "date_extract": "quarter",
+        "date_col":     col,
+        "quarter":      True,
+        "group":        "Date",
+    })
+
+    return dims
 
 
 def _is_time_column(col_name: str, series) -> bool:
@@ -309,17 +467,23 @@ def _should_skip(col_name: str) -> bool:
 def get_filter_dimensions() -> dict:
     """
     Auto-discover all filter-eligible columns from all loaded tables.
-    Returns a dict of {dim_key: {label, column, table, type, cast, options, is_time}}
-    ready for use by filters.py.
-    Deduplicates by column name — largest table wins.
+    v_maintenance_full always wins for any column it contains — strict dedup.
+    Returns a dict of {dim_key: {label, column, table, type, cast, options, is_time, group}}
     """
     get_conn()  # ensure loaded
 
-    seen: dict = {}  # col_name → (table_name, n_rows, series)
+    seen: dict = {}  # col_name → (table_name, n_cols, series, n_distinct)
 
-    for table_name, meta in _tables_meta.items():
+    # Process v_maintenance_full FIRST so it always wins dedup
+    primary = "v_maintenance_full"
+    table_order = ([primary] if primary in _tables_meta else []) +                   [t for t in _tables_meta if t != primary]
+
+    for table_name in table_order:
+        if table_name not in _tables_meta:
+            continue
+        meta = _tables_meta[table_name]
         df = meta["df"]
-        n_rows = len(df)
+        n_cols = len(df.columns)  # use column count for priority
 
         for col in df.columns:
             if _should_skip(col):
@@ -331,11 +495,10 @@ def get_filter_dimensions() -> dict:
             if n_distinct < 2:
                 continue  # single value — useless filter
 
-            # Dedup — keep the largest table's version
+            # Strict dedup — v_maintenance_full wins, then first seen wins
             if col in seen:
-                if n_rows <= seen[col][1]:
-                    continue
-            seen[col] = (table_name, n_rows, series, n_distinct)
+                continue  # already have this column from a higher-priority table
+            seen[col] = (table_name, n_cols, series, n_distinct)
 
     result = {}
 
@@ -357,13 +520,40 @@ def get_filter_dimensions() -> dict:
             "is_time": True,
         }
 
-    for col, (table_name, n_rows, series, n_distinct) in seen.items():
-        is_numeric = pd.api.types.is_numeric_dtype(series)
+    for col, (table_name, n_cols, series, n_distinct) in seen.items():
+        is_numeric  = pd.api.types.is_numeric_dtype(series)
         is_datetime = pd.api.types.is_datetime64_any_dtype(series)
-        is_time = _is_time_column(col, series)
+        is_time     = _is_time_column(col, series)
+        group       = _get_group(col)
 
-        if is_datetime:
-            continue  # datetime columns — date range picker is a future enhancement
+        # Date/datetime columns — keep raw + extract year/month/quarter
+        if is_datetime or _is_date_col(col, series):
+            # Raw date as filter (top 50 distinct values)
+            try:
+                if is_datetime:
+                    raw_opts = sorted(series.dropna().dt.strftime("%Y-%m-%d").unique().tolist())[:50]
+                else:
+                    raw_opts = sorted(series.dropna().astype(str).unique().tolist())[:50]
+                if raw_opts:
+                    result[col] = {
+                        "label":      col.replace("_", " ").title(),
+                        "column":     col,
+                        "table":      table_name,
+                        "type":       "select",
+                        "cast":       None,
+                        "options":    raw_opts,
+                        "is_time":    True,
+                        "n_distinct": n_distinct,
+                        "group":      "Date",
+                    }
+            except Exception:
+                pass
+            # Extracted date dims — year/month/quarter
+            extracted = _extract_date_dims(col, table_name, series)
+            for dim in extracted:
+                dim_key = f"{col}__{dim['date_extract']}"
+                result[dim_key] = dim
+            continue
 
         # Determine cast
         cast = None
@@ -379,7 +569,6 @@ def get_filter_dimensions() -> dict:
                 options = [str(int(v)) if cast == "int" else str(v) for v in raw_opts]
             else:
                 raw_opts = sorted(series.dropna().astype(str).unique().tolist())
-                # Special case: month names — sort by calendar order
                 if all(v in _MONTH_ORDER for v in raw_opts):
                     options = [m for m in _MONTH_ORDER if m in raw_opts]
                 else:
@@ -390,21 +579,16 @@ def get_filter_dimensions() -> dict:
         if not options:
             continue
 
-        # Pretty label
-        label = col.replace("_", " ").title()
-
-        # dim key — use column name directly so build_where_from_filters can match
-        dim_key = col
-
-        result[dim_key] = {
-            "label":   label,
-            "column":  col,
-            "table":   table_name,
-            "type":    "select",
-            "cast":    cast,
-            "options": options,
-            "is_time": is_time,
+        result[col] = {
+            "label":      col.replace("_", " ").title(),
+            "column":     col,
+            "table":      table_name,
+            "type":       "select",
+            "cast":       cast,
+            "options":    options,
+            "is_time":    is_time,
             "n_distinct": n_distinct,
+            "group":      group,
         }
 
     return result
