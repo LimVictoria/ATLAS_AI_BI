@@ -98,17 +98,18 @@ def build_where_from_filters(filters: dict) -> str:
             continue
 
         cfg = dims.get(dim)
-        col = cfg["column"] if cfg else dim
-        cast = cfg.get("cast") if cfg else None
+        col          = cfg["column"] if cfg else dim
+        cast         = cfg.get("cast") if cfg else None
+        date_extract = cfg.get("date_extract") if cfg else None
+        date_col     = cfg.get("date_col", col) if cfg else col
+        is_qtr_extract = cfg.get("quarter") and date_extract == "quarter" if cfg else False
 
         def fmt(v, _cast=cast):
-            # If cast known from schema, use it
             if _cast in {"int", "float"}:
                 try:
                     return str(int(float(v))) if _cast == "int" else str(float(v))
                 except Exception:
                     return f"'{v}'"
-            # Fallback: auto-detect — if value looks like a pure integer, don't quote it
             try:
                 int_v = int(str(v).strip())
                 if str(int_v) == str(v).strip():
@@ -118,6 +119,37 @@ def build_where_from_filters(filters: dict) -> str:
             return f"'{v}'"
 
         values_list = value if isinstance(value, list) else [value]
+
+        # Handle extracted date dimensions — YEAR() / MONTH() functions
+        if date_extract and date_extract != "quarter":
+            fn = "YEAR" if date_extract == "year" else "MONTH"
+            month_names = ["January","February","March","April","May","June",
+                           "July","August","September","October","November","December"]
+            def to_num(v):
+                v_str = str(v).strip()
+                if v_str in month_names:
+                    return str(month_names.index(v_str) + 1)
+                try:
+                    return str(int(float(v_str)))
+                except Exception:
+                    return v_str
+            if date_extract == "month":
+                values_list = [to_num(v) for v in values_list]
+            if len(values_list) > 1:
+                vals = ", ".join(values_list)
+                clauses.append(f"{fn}({date_col}) IN ({vals})")
+            else:
+                clauses.append(f"{fn}({date_col}) = {values_list[0]}")
+            continue
+
+        # Handle extracted quarter from date column
+        if is_qtr_extract:
+            months = []
+            for q in values_list:
+                months.extend(QUARTER_MONTHS.get(str(q), []))
+            if months:
+                clauses.append(f"MONTH({date_col}) IN ({', '.join(str(m) for m in sorted(set(months)))})")
+            continue
 
         if len(values_list) > 1:
             vals = ", ".join(fmt(v) for v in values_list)
@@ -137,13 +169,16 @@ def get_all_filters():
     result = {}
     for dim_id, cfg in dims.items():
         result[dim_id] = {
-            "label":      cfg["label"],
-            "type":       cfg["type"],
-            "column":     cfg["column"],
-            "table":      cfg.get("table", ""),
-            "options":    cfg.get("options", []),
-            "is_time":    cfg.get("is_time", False),
-            "n_distinct": cfg.get("n_distinct", 0),
+            "label":        cfg["label"],
+            "type":         cfg["type"],
+            "column":       cfg["column"],
+            "table":        cfg.get("table", ""),
+            "options":      cfg.get("options", []),
+            "is_time":      cfg.get("is_time", False),
+            "n_distinct":   cfg.get("n_distinct", 0),
+            "group":        cfg.get("group", "Other"),
+            "date_extract": cfg.get("date_extract", ""),
+            "date_col":     cfg.get("date_col", ""),
         }
     return {"filters": result, "time_shortcuts": _get_time_shortcuts()}
 
