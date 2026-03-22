@@ -9,9 +9,9 @@ const API = axios.create({
 export const runSQL = (sql: string, chart_type?: string, title?: string, category?: string) =>
   API.post("/query/", { sql, chart_type, title, category }).then(r => r.data)
 
-// Legacy alias — returns rejection so callers handle it gracefully
-export const runMetric = (_metric_id: string, _chart_type?: string, _filters?: Record<string, any>) =>
-  Promise.reject(new Error("runMetric is disabled — card has no SQL stored. Regenerate this chart via the AI."))
+// Legacy alias kept for any remaining Path A references
+export const runMetric = (metric_id: string, chart_type?: string, filters?: Record<string, any>) =>
+  API.post("/query/", { sql: `SELECT '${metric_id}' AS metric_removed`, chart_type }).then(r => r.data)
 
 export const sendChat = (
   session_id: string,
@@ -56,20 +56,5 @@ export const rerenderChart = (
 ) =>
   API.post("/chat/rerender", { sql, chart_type, title, category, filters }).then(r => r.data)
 
-export const getDQWarnings = () =>
-  API.get("/chat/data/warnings").then(r => r.data)
-
-export const reloadData = () =>
-  API.post("/chat/data/reload").then(r => r.data)
-
-export const toggleFormat = (params: {
-  long_sql: string
-  wide_sql: string
-  is_wide: boolean
-  chart_type: string
-  title: string
-  category: string
-  filters?: Record<string, any>
-  pivot_col?: string
-}) =>
-  API.post("/chat/toggle_format", params).then(r => r.data)
+export const deriveSql = (sql: string) =>
+  API.post("/chat/derive_source_sql", { sql }).then(r => r.data)
