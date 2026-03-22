@@ -375,6 +375,151 @@ def toggle_format(req: ToggleFormatRequest):
     }
 
 
+# ── Star schema join map ──────────────────────────────────────────────────────
+# fact_maintenance_event is the central fact table
+_STAR_JOIN_MAP = {
+    "dim_truck":     {"alias": "dt", "fk": "f.truck_id = dt.truck_id"},
+    "dim_component": {"alias": "dc", "fk": "f.component_id = dc.component_id"},
+    "dim_workshop":  {"alias": "dw", "fk": "f.workshop_id = dw.workshop_id"},
+    "dim_date":      {"alias": "dd", "fk": "f.date_id = dd.date_id"},
+}
+
+# Column → source table mapping (built from actual data files)
+_COL_SOURCE_TABLE: dict = {}
+
+def _get_col_source_table() -> dict:
+    """Build column → source table mapping from loaded star schema tables."""
+    global _COL_SOURCE_TABLE
+    if _COL_SOURCE_TABLE:
+        return _COL_SOURCE_TABLE
+    try:
+        from db.duckdb_session import _tables_meta
+        # Priority: fact table first, then dims (dims override for their own columns)
+        priority = ["fact_maintenance_event", "dim_truck", "dim_component", "dim_workshop", "dim_date"]
+        result = {}
+        for tname in priority:
+            if tname in _tables_meta:
+                for col in _tables_meta[tname]["df"].columns:
+                    result[col.lower()] = tname
+        _COL_SOURCE_TABLE = result
+    except Exception:
+        pass
+    return _COL_SOURCE_TABLE
+
+
+def derive_source_sql(view_sql: str) -> str:
+    """
+    Derive a star schema source SQL from a v_maintenance_full query.
+    Returns the equivalent JOIN query using source tables with aliases.
+    Best-effort — annotates ambiguous columns with comments.
+    """
+    import re as _re
+
+    # Only process queries that use v_maintenance_full
+    if "v_maintenance_full" not in view_sql.lower():
+        return view_sql  # already uses source tables or unknown
+
+    col_map = _get_col_source_table()
+
+    # Extract SELECT, WHERE, GROUP BY, ORDER BY, HAVING parts
+    select_match = _re.search(r'SELECT\s+(.+?)\s+FROM', view_sql, _re.IGNORECASE | _re.DOTALL)
+    where_match  = _re.search(r'WHERE\s+(.+?)(?=GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|$)', view_sql, _re.IGNORECASE | _re.DOTALL)
+    group_match  = _re.search(r'GROUP\s+BY\s+(.+?)(?=ORDER\s+BY|HAVING|LIMIT|$)', view_sql, _re.IGNORECASE | _re.DOTALL)
+    order_match  = _re.search(r'ORDER\s+BY\s+(.+?)(?=LIMIT|$)', view_sql, _re.IGNORECASE | _re.DOTALL)
+
+    if not select_match:
+        return view_sql
+
+    # Find which dim tables are needed based on columns used
+    # Scan the full SQL for column names
+    all_words = set(_re.findall(r'([a-z_][a-z_0-9]*)', view_sql.lower()))
+    needed_dims = set()
+    for col in all_words:
+        src = col_map.get(col)
+        if src and src != "fact_maintenance_event" and src in _STAR_JOIN_MAP:
+            needed_dims.add(src)
+
+    # Build alias map for qualified column replacement
+    alias_map = {"fact_maintenance_event": "f"}
+    for dim in needed_dims:
+        alias_map[dim] = _STAR_JOIN_MAP[dim]["alias"]
+
+    def qualify_col(col_name: str) -> str:
+        """Prefix a bare column name with its table alias."""
+        src = col_map.get(col_name.lower())
+        if src and src in alias_map:
+            return f"{alias_map[src]}.{col_name}"
+        return col_name
+
+    def qualify_expr(expr: str) -> str:
+        """Qualify all bare column names in an expression."""
+        # Replace bare column names (not already qualified with a dot)
+        def replace_col(m):
+            word = m.group(0)
+            # Skip if already qualified, skip SQL keywords and numbers
+            keywords = {"from","where","group","by","order","having","limit","and","or","not",
+                        "in","like","between","is","null","true","false","as","on","join",
+                        "select","sum","avg","count","max","min","round","nullif","case",
+                        "when","then","else","end","asc","desc","distinct"}
+            if word.lower() in keywords:
+                return word
+            if word.isdigit():
+                return word
+            return qualify_col(word)
+        return _re.sub(r'([a-zA-Z_][a-zA-Z_0-9]*)(?!\s*\.)', replace_col, expr)
+
+    # Build FROM + JOINs
+    joins = ["FROM fact_maintenance_event f"]
+    for dim in sorted(needed_dims):  # sorted for determinism
+        j = _STAR_JOIN_MAP[dim]
+        joins.append(f"JOIN {dim} {j['alias']} ON {j['fk']}")
+
+    # Qualify SELECT
+    select_raw = select_match.group(1)
+    select_qualified = qualify_expr(select_raw)
+
+    # Qualify WHERE
+    where_clause = ""
+    if where_match:
+        where_qualified = qualify_expr(where_match.group(1).strip())
+        where_clause = f"WHERE {where_qualified}"
+
+    # Qualify GROUP BY
+    group_clause = ""
+    if group_match:
+        group_qualified = qualify_expr(group_match.group(1).strip())
+        group_clause = f"GROUP BY {group_qualified}"
+
+    # Qualify ORDER BY
+    order_clause = ""
+    if order_match:
+        order_qualified = qualify_expr(order_match.group(1).strip())
+        order_clause = f"ORDER BY {order_qualified}"
+
+    # Assemble
+    parts = [
+        f"-- Star schema equivalent (for reference)",
+        f"SELECT {select_qualified}",
+    ] + joins + [
+        p for p in [where_clause, group_clause, order_clause] if p
+    ]
+
+    return "\n".join(parts)
+
+
+class DeriveSqlRequest(BaseModel):
+    sql: str
+
+@router.post("/derive_source_sql")
+def derive_source_sql_endpoint(req: DeriveSqlRequest):
+    """Derive star schema source SQL from a v_maintenance_full view query."""
+    try:
+        source_sql = derive_source_sql(req.sql)
+        return {"source_sql": source_sql, "view_sql": req.sql}
+    except Exception as e:
+        return {"source_sql": req.sql, "view_sql": req.sql, "error": str(e)}
+
+
 class RerenderRequest(BaseModel):
     sql: str
     chart_type: str
