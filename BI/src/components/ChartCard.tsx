@@ -402,10 +402,19 @@ function CodeFace({ metricId, sql, baseSql, color, light, filters }: {
 }) {
   const isFiltered = !!(sql && baseSql && sql !== baseSql) ||
     !!(filters && Object.keys(filters).length > 0)
-  const [tab, setTab] = useState<"sql" | "python">("sql")
+  const [tab, setTab] = useState<"sql" | "source" | "python">("sql")
   const [copied, setCopied] = useState(false)
+  const [sourceSql, setSourceSql] = useState<string>("")
 
-  // Active filter summary for display
+  useEffect(() => {
+    if (!sql || sourceSql) return
+    const effectiveSql = baseSql || sql
+    if (!effectiveSql.toLowerCase().includes("v_maintenance_full")) return
+    import("@/utils/api").then(({ deriveSql }) => {
+      deriveSql(effectiveSql).then(r => { if (r?.source_sql) setSourceSql(r.source_sql) }).catch(() => {})
+    })
+  }, [sql, baseSql, sourceSql])
+
   const filterSummary = filters && Object.keys(filters).length > 0
     ? Object.entries(filters)
         .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : true))
@@ -413,13 +422,14 @@ function CodeFace({ metricId, sql, baseSql, color, light, filters }: {
         .join(" · ")
     : ""
 
-  // Recompute on every render so SQL updates when filters change
-  const sqlText  = sql || `-- SQL not available for: ${metricId}\n-- Ask the AI to regenerate this chart`
-  const pyText   = sql
+  const viewSql = sql || `-- SQL not available for: ${metricId}\n-- Ask the AI to regenerate this chart`
+  const pyText  = sql
     ? `import pandas as pd\nimport plotly.express as px\nfrom db.duckdb_session import run_query\n\n# Active filters: ${filterSummary || "none"}\ndf = run_query("""\n${sql}\n""")\nprint(df.head())\n\nfig = px.bar(df, x=df.columns[0], y=df.columns[1], title="${metricId.replace(/_/g, ' ')}")\nfig.show()`
     : `# Ask the AI to regenerate this chart to see its SQL`
-  const code = tab === "sql" ? sqlText : pyText
 
+  const code = tab === "sql" ? viewSql
+    : tab === "source" ? (sourceSql || "-- Deriving star schema SQL...")
+    : pyText
   const copy = () => {
     navigator.clipboard.writeText(code)  // code is always current
     setCopied(true)
@@ -430,16 +440,17 @@ function CodeFace({ metricId, sql, baseSql, color, light, filters }: {
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "#0F172A", overflow: "hidden" }}>
       {/* Tab bar */}
       <div style={{ display: "flex", alignItems: "center", padding: "8px 12px 0", gap: 4, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        {(["sql", "python"] as const).map(t => (
+        {(["sql", "source", "python"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             onMouseDown={e => e.stopPropagation()}
+            title={t === "source" ? "Star schema SQL using source tables — for data engineers" : undefined}
             style={{
               padding: "4px 12px", borderRadius: "6px 6px 0 0", fontSize: 11, fontWeight: 600,
               border: "none", cursor: "pointer", transition: "all 0.12s",
               background: tab === t ? "rgba(255,255,255,0.08)" : "transparent",
               color: tab === t ? color : "#475569",
               borderBottom: tab === t ? `2px solid ${color}` : "2px solid transparent",
-            }}>{t.toUpperCase()}</button>
+            }}>{t === "source" ? "SOURCE" : t.toUpperCase()}</button>
         ))}
         <button onClick={copy} onMouseDown={e => e.stopPropagation()}
           style={{ marginLeft: "auto", fontSize: 10, padding: "3px 10px", borderRadius: 6, border: `1px solid rgba(255,255,255,0.1)`, background: copied ? color : "rgba(255,255,255,0.06)", color: copied ? "#fff" : "#64748B", cursor: "pointer", transition: "all 0.15s" }}>
@@ -768,6 +779,17 @@ export default function ChartCard({ card }: Props) {
           </GlassBtn>
         </div>
       </div>
+
+      {/* ── Per-card filter strip — always visible, grouped by category ── */}
+      {!flipped && (
+        <CardFilterPanel
+          sql={card.sql || card.base_sql || ""}
+          filters={card.filters || {}}
+          color={cat.color}
+          glass={cat.glass}
+          onFilterChange={applyCardFilter}
+        />
+      )}
 
       {/* ── Active filter caption ── */}
       {!flipped && hasActiveFilters && (() => {
