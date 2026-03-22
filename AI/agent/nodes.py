@@ -111,57 +111,41 @@ async def _build_pivot_sql(base_sql: str, pivot_col: str, measure_col: str, row_
     First queries distinct values of pivot_col, then generates the pivot.
     Returns (wide_sql, distinct_values)."""
     try:
-        import re
-
-        # Strip table alias prefixes (e.g. "dt.brand" -> "brand")
-        def strip_alias(col: str) -> str:
-            return col.split(".")[-1].strip() if "." in col else col.strip()
-
-        bare_pivot   = strip_alias(pivot_col)
-        bare_row     = strip_alias(row_col)
-        bare_measure = strip_alias(measure_col)
-
-        # For JOIN queries always use v_maintenance_full — it has all columns pre-joined
-        has_join = bool(re.search(r"\bJOIN\b", base_sql, re.IGNORECASE))
-        if has_join:
-            table_name = "v_maintenance_full"
-        else:
-            table_match = re.search(r"\bFROM\s+(\w+)", base_sql, re.IGNORECASE)
-            table_name = table_match.group(1) if table_match else "v_maintenance_full"
-
         # Step 1: discover distinct values
-        discovery_sql = f"SELECT DISTINCT {bare_pivot} FROM {table_name} WHERE {bare_pivot} IS NOT NULL ORDER BY {bare_pivot}"
+        # Extract table name from base_sql
+        import re
+        table_match = re.search(r'FROM\s+(\w+)', base_sql, re.IGNORECASE)
+        table_name = table_match.group(1) if table_match else "v_maintenance_full"
+        discovery_sql = f"SELECT DISTINCT {pivot_col} FROM {table_name} WHERE {pivot_col} IS NOT NULL ORDER BY {pivot_col}"
         distinct_df = run_query(discovery_sql)
         distinct_vals = distinct_df.iloc[:, 0].tolist()
 
         if not distinct_vals or len(distinct_vals) > 20:
-            return "", distinct_vals
+            return "", distinct_vals  # too many values — skip pivot
 
-        # Step 2: build CASE WHEN pivot SQL using bare column names
+        # Step 2: build CASE WHEN pivot SQL
         def col_alias(v):
-            return re.sub(r"[^a-zA-Z0-9]", "_", str(v)).strip("_").lower()
+            # Make a safe column alias from value
+            return re.sub(r'[^a-zA-Z0-9]', '_', str(v)).strip('_').lower()
 
         sep = ",\n       "
         cases = sep.join(
-            "ROUND(SUM(CASE WHEN " + bare_pivot + " = '" + str(v) + "' THEN " + bare_measure + " ELSE 0 END), 2) AS " + col_alias(v)
+            "ROUND(SUM(CASE WHEN " + pivot_col + " = '" + str(v) + "' THEN " + measure_col + " ELSE 0 END), 2) AS " + col_alias(v)
             for v in distinct_vals
         )
 
-        # Extract WHERE clause only for single-table queries
-        where_clause = ""
-        if not has_join:
-            where_match = re.search(r"\bWHERE\b(.+?)(?=\bGROUP\b|\bORDER\b|\bHAVING\b|\bLIMIT\b|$)", base_sql, re.IGNORECASE | re.DOTALL)
-            where_clause = f"WHERE {where_match.group(1).strip()}" if where_match else ""
+        # Extract WHERE clause from base_sql if present
+        where_match = re.search(r'WHERE(.+?)(?=GROUP|ORDER|HAVING|LIMIT|$)', base_sql, re.IGNORECASE | re.DOTALL)
+        where_clause = f"WHERE {where_match.group(1).strip()}" if where_match else ""
 
         wide_sql = (
-            "SELECT " + bare_row + ",\n       " + cases + "\n"
+            "SELECT " + row_col + ",\n       " + cases + "\n"
             "FROM " + table_name + "\n"
             + (where_clause + "\n" if where_clause else "")
-            + "GROUP BY " + bare_row + "\n"
-            + "ORDER BY SUM(" + bare_measure + ") DESC"
+            + "GROUP BY " + row_col + "\n"
+            + "ORDER BY SUM(" + measure_col + ") DESC"
         )
 
-        print(f"[pivot] built wide SQL: pivot={bare_pivot!r} row={bare_row!r} measure={bare_measure!r} vals={distinct_vals}")
         return wide_sql.strip(), distinct_vals
     except Exception as e:
         print(f"[pivot] build failed: {e}")
@@ -381,9 +365,17 @@ async def sql_node(state: AgentState) -> AgentState:
         except Exception:
             pass
 
+    # Load metrics guide
+    try:
+        from api.metrics import get_metrics_guide
+        metrics_guide = get_metrics_guide()
+    except Exception:
+        metrics_guide = ""
+
     system = f"""You are a DuckDB SQL expert for a fleet maintenance BI platform.
 
 {_get_schema_guide()}
+{metrics_guide}
 
 {state.get("board_context", "")}{memory_hint}
 
@@ -395,15 +387,6 @@ Return ONLY valid JSON — no markdown, no code blocks:
   "category": "Cost",
   "narrative_hint": "One sentence about what this shows"
 }}
-
-STAR SCHEMA SQL RULES — CRITICAL:
-- ALWAYS use table aliases in JOIN queries: FROM fact_maintenance_event f JOIN dim_truck dt ON f.truck_id = dt.truck_id
-- ALWAYS qualify every column with its table alias: dt.brand, f.total_cost_myr, d.year — NEVER use bare column names in JOIN queries
-- This prevents ambiguous column errors when filters are applied
-- For simple single-table queries, use v_maintenance_full directly (it has all columns pre-joined)
-- Only write JOIN queries when the user specifically needs columns not in v_maintenance_full (e.g. dim_workshop.state)
-- CORRECT: SELECT dt.brand, ROUND(SUM(f.total_cost_myr), 2) AS total_cost FROM fact_maintenance_event f JOIN dim_truck dt ON f.truck_id = dt.truck_id GROUP BY dt.brand
-- WRONG: SELECT brand, SUM(total_cost_myr) FROM fact_maintenance_event JOIN dim_truck ON fact_maintenance_event.truck_id = dim_truck.truck_id GROUP BY brand
 
 CHART TYPE GUIDE:
 - line: when query groups by year_month, year_quarter, month_name (time series)
@@ -455,9 +438,8 @@ CHART TYPE GUIDE:
                 gb_cols = [c.strip() for c in gb_match.group(1).split(",")]
                 # Need exactly 2 GROUP BY columns to be pivot-eligible
                 if len(gb_cols) == 2:
-                    # Strip table aliases (e.g. "dt.brand" -> "brand")
-                    row_col   = gb_cols[0].split(".")[-1].strip()
-                    pivot_col = gb_cols[1].split(".")[-1].strip()
+                    row_col   = gb_cols[0]
+                    pivot_col = gb_cols[1]
                     # Find measure column from SELECT
                     select_match = _re.search(r'SELECT\s+(.+?)\s+FROM', sql, _re.IGNORECASE | _re.DOTALL)
                     if select_match:
