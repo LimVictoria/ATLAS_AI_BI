@@ -357,25 +357,17 @@ async def sql_node(state: AgentState) -> AgentState:
             if m.get("preferred_chart"):
                 hints.append(f"User prefers {m['preferred_chart']} charts — use unless data clearly needs another")
             if m.get("focus_brands"):
-                hints.append(f"User focuses on brands: {', '.join(m['focus_brands'])} — mention these in narrative if relevant, but do NOT add WHERE clauses for them unless user explicitly asks")
-            # NOTE: focus_years intentionally excluded — never add year WHERE from memory
-            # Years are only filtered when user explicitly asks or uses filter bar
+                hints.append(f"User focuses on: {', '.join(m['focus_brands'])}")
+            if m.get("focus_years"):
+                hints.append(f"User usually looks at years: {', '.join(str(y) for y in m['focus_years'])}")
             if hints:
                 memory_hint = "\n\nUSER PREFERENCES (apply subtly):\n" + "\n".join(f"- {h}" for h in hints)
         except Exception:
             pass
 
-    # Load metrics guide
-    try:
-        from api.metrics import get_metrics_guide
-        metrics_guide = get_metrics_guide()
-    except Exception:
-        metrics_guide = ""
-
     system = f"""You are a DuckDB SQL expert for a fleet maintenance BI platform.
 
 {_get_schema_guide()}
-{metrics_guide}
 
 {state.get("board_context", "")}{memory_hint}
 
@@ -387,21 +379,6 @@ Return ONLY valid JSON — no markdown, no code blocks:
   "category": "Cost",
   "narrative_hint": "One sentence about what this shows"
 }}
-
-SQL FILTER RULES - CRITICAL:
-- NEVER add WHERE clauses based on memory or assumptions
-- ONLY add WHERE if the user EXPLICITLY mentions a filter value (e.g. "show 2023 data", "filter to Scania only")
-- "show total cost by brand" = NO WHERE clause — show all data
-- "show total cost by brand for 2023" = WHERE year = 2023
-- The filter bar handles UI filters separately — never duplicate them in SQL
-- When in doubt, write SQL with NO WHERE — let the user apply filters themselves
-
-STAR SCHEMA SQL RULES - CRITICAL:
-- ALWAYS use table aliases in JOIN queries: FROM fact_maintenance_event f JOIN dim_truck dt ON f.truck_id = dt.truck_id
-- ALWAYS qualify every column with its table alias in JOIN queries: dt.brand, f.total_cost_myr
-- For simple queries, use v_maintenance_full directly — it has all columns pre-joined
-- CORRECT: SELECT dt.brand, ROUND(SUM(f.total_cost_myr), 2) AS total_cost FROM fact_maintenance_event f JOIN dim_truck dt ON f.truck_id = dt.truck_id GROUP BY dt.brand
-- WRONG: SELECT brand, SUM(total_cost_myr) FROM fact_maintenance_event JOIN dim_truck ON fact_maintenance_event.truck_id = dim_truck.truck_id GROUP BY brand
 
 CHART TYPE GUIDE:
 - line: when query groups by year_month, year_quarter, month_name (time series)
@@ -913,7 +890,7 @@ Return this exact structure (fill what you can infer, keep existing values for t
 {{
   "preferred_chart": "{existing.get('preferred_chart', '')}",
   "focus_brands": {json.dumps(existing.get('focus_brands', []))},
-  "focus_years": [],
+  "focus_years": {json.dumps(existing.get('focus_years', []))},
   "focus_metrics": {json.dumps(existing.get('focus_metrics', []))},
   "preferred_filters": {json.dumps(existing.get('preferred_filters', {}))},
   "expertise_level": "{existing.get('expertise_level', 'intermediate')}",
