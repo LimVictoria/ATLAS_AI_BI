@@ -31,20 +31,18 @@ const CHART_ICONS: Record<string, React.ReactNode> = {
   histogram: <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="9" width="1.8" height="3" rx="0.5" fill="#F59E0B" opacity="0.6"/><rect x="3.2" y="6" width="1.8" height="6" rx="0.5" fill="#F59E0B" opacity="0.75"/><rect x="5.4" y="3" width="1.8" height="9" rx="0.5" fill="#F59E0B"/><rect x="7.6" y="5" width="1.8" height="7" rx="0.5" fill="#F59E0B" opacity="0.75"/><rect x="9.8" y="8" width="1.8" height="4" rx="0.5" fill="#F59E0B" opacity="0.5"/></svg>,
 }
 
-// ── Dynamic filter options — fetched from backend, reflects actual data ──────────
-
-// Fixed enumerations that never change regardless of data
-// Only quarter is truly fixed — all other options come from actual data via /filters/ endpoint
 // ── Per-card filter metadata cache (fetched once per session) ────────────────
 interface FilterDimMeta {
   label: string
   column: string
   table: string
   options: string[]
+  group: string
   date_extract?: string
   date_col?: string
   cast?: string
 }
+
 let _allDimsCache: Record<string, FilterDimMeta> | null = null
 let _allDimsFetch: Promise<void> | null = null
 
@@ -63,6 +61,7 @@ async function loadAllDims(): Promise<Record<string, FilterDimMeta>> {
             column:       cfg.column,
             table:        cfg.table || "",
             options:      cfg.options,
+            group:        cfg.group || "Other",
             date_extract: cfg.date_extract || "",
             date_col:     cfg.date_col || "",
             cast:         cfg.cast || "",
@@ -78,11 +77,10 @@ async function loadAllDims(): Promise<Record<string, FilterDimMeta>> {
   return _allDimsCache!
 }
 
-// Extract table names referenced in a SQL string
+// Extract table names from SQL string
 function extractTablesFromSql(sql: string): Set<string> {
   const tables = new Set<string>()
   if (!sql) return tables
-  // Match FROM table [alias] and JOIN table [alias]
   const re = /(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/gi
   const reserved = new Set(["select","where","group","order","having","limit","on","and","or"])
   let m: RegExpExecArray | null
@@ -93,25 +91,26 @@ function extractTablesFromSql(sql: string): Set<string> {
   return tables
 }
 
-// Get filter dims relevant to a card's SQL
+// Get filter dims relevant to a card's SQL, always all dims for v_maintenance_full
 function getRelevantDims(sql: string, allDims: Record<string, FilterDimMeta>): Record<string, FilterDimMeta> {
-  if (!sql) return allDims  // no SQL yet — show all
+  if (!sql) return allDims
   const tables = extractTablesFromSql(sql)
-  if (tables.size === 0) return allDims
-  // v_maintenance_full is a pre-joined view — all dims apply
-  if (tables.has("v_maintenance_full")) return allDims
-  // Otherwise only show dims whose table is referenced in the SQL
+  if (tables.size === 0 || tables.has("v_maintenance_full")) return allDims
   const relevant: Record<string, FilterDimMeta> = {}
   Object.entries(allDims).forEach(([key, dim]) => {
-    if (!dim.table || tables.has(dim.table.toLowerCase())) {
-      relevant[key] = dim
-    }
+    if (!dim.table || tables.has(dim.table.toLowerCase())) relevant[key] = dim
   })
   return relevant
 }
 
 // Dynamic labels for MultiSelect
 const FILTER_LABELS: Record<string, string> = {}
+
+// Group ordering for display
+const GROUP_ORDER = ["Vehicle", "Component", "Workshop", "Event", "Date", "Numeric", "Other"]
+const GROUP_ICONS: Record<string, string> = {
+  Vehicle: "🚛", Component: "🔧", Workshop: "🏭", Event: "⚡", Date: "📅", Numeric: "📊", Other: "📋"
+}
 
 const CAT: Record<string, { color: string; light: string; border: string; glass: string }> = {
   Cost:     { color: "#2563EB", light: "#EFF6FF", border: "#BFDBFE", glass: "rgba(37,99,235,0.12)" },
@@ -331,28 +330,67 @@ function CardFilterPanel({ sql, filters, color, glass, onFilterChange }: {
   onFilterChange: (key: string, vals: string[]) => void
 }) {
   const [relevantDims, setRelevantDims] = useState<Record<string, FilterDimMeta>>({})
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     loadAllDims().then(allDims => {
       const dims = getRelevantDims(sql, allDims)
       setRelevantDims(dims)
-      // Update global FILTER_LABELS for MultiSelect display
       Object.entries(dims).forEach(([key, d]) => { FILTER_LABELS[key] = d.label })
     })
-  }, [sql])  // re-run when SQL changes
+  }, [sql])
 
-  const dimEntries = Object.entries(relevantDims).filter(([, d]) => d.options.length > 0)
-  if (dimEntries.length === 0) return null
+  const grouped: Record<string, Array<[string, FilterDimMeta]>> = {}
+  Object.entries(relevantDims).filter(([, d]) => d.options.length > 0).forEach(([key, dim]) => {
+    const g = dim.group || "Other"
+    if (!grouped[g]) grouped[g] = []
+    grouped[g].push([key, dim])
+  })
+
+  const orderedGroups = GROUP_ORDER.filter(g => grouped[g]?.length > 0)
+  if (orderedGroups.length === 0) return null
+
+  const toggleGroup = (g: string) => setCollapsed(c => ({ ...c, [g]: !c[g] }))
 
   return (
-    <div style={{ padding: "6px 10px 8px", borderBottom: "1px solid #F1F5F9", background: "linear-gradient(to bottom, #FAFBFC, #F5F7FA)", display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-      <span style={{ fontSize: 9.5, fontWeight: 700, color: "#94A3B8", letterSpacing: "0.06em", marginRight: 2, flexShrink: 0 }}>FILTER</span>
-      {dimEntries.map(([key, dim]) => (
-        <MultiSelect key={key} dim={key}
-          values={Array.isArray(filters[key]) ? filters[key] : filters[key] ? [filters[key]] : []}
-          options={dim.options} color={color} glass={glass}
-          onChange={vals => onFilterChange(key, vals)} />
-      ))}
+    <div style={{ borderBottom: "1px solid #F1F5F9", background: "linear-gradient(to bottom, #FAFBFC, #F5F7FA)" }}>
+      {orderedGroups.map(group => {
+        const isCollapsed = collapsed[group] ?? false
+        const dims = grouped[group]
+        const hasActive = dims.some(([key]) => {
+          const v = filters[key]; return v && (Array.isArray(v) ? v.length > 0 : true)
+        })
+        return (
+          <div key={group}>
+            <div onClick={() => toggleGroup(group)} style={{
+              display: "flex", alignItems: "center", gap: 5, padding: "4px 10px",
+              cursor: "pointer", borderBottom: isCollapsed ? "none" : "1px solid #F1F5F9",
+              background: hasActive ? `${color}06` : "transparent",
+            }}>
+              <span style={{ fontSize: 11 }}>{GROUP_ICONS[group] || "📋"}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 700, color: hasActive ? color : "#94A3B8", letterSpacing: "0.06em", flex: 1 }}>
+                {group.toUpperCase()}
+              </span>
+              {hasActive && (
+                <span style={{ fontSize: 9, background: `${color}18`, color, padding: "1px 5px", borderRadius: 99, fontWeight: 600 }}>
+                  {dims.filter(([key]) => { const v = filters[key]; return v && (Array.isArray(v) ? v.length > 0 : true) }).length} active
+                </span>
+              )}
+              <span style={{ fontSize: 10, color: "#CBD5E1", marginLeft: 2 }}>{isCollapsed ? "+" : "-"}</span>
+            </div>
+            {!isCollapsed && (
+              <div style={{ padding: "5px 10px 7px", display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {dims.map(([key, dim]) => (
+                  <MultiSelect key={key} dim={key}
+                    values={Array.isArray(filters[key]) ? filters[key] : filters[key] ? [filters[key]] : []}
+                    options={dim.options} color={color} glass={glass}
+                    onChange={vals => onFilterChange(key, vals)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -548,16 +586,17 @@ export default function ChartCard({ card }: Props) {
     else newFilters[key] = vals.length === 1 ? vals[0] : vals
     updateChart(card.id, { loading: true, filters: newFilters })
     try {
-      // Use base_sql as the clean source — filters are appended on top by backend
-      // base_sql is the original LLM SQL without any UI filters
-      const sourceSql = card.base_sql || card.sql || ""
+      // Always use base_sql (LLM-generated SQL with intent filters intact)
+      // base_sql never changes — UI panel filters are appended on top by backend
+      // Fall back to card.sql only if base_sql was never set (old cards)
+      let sourceSql = card.base_sql || card.sql || ""
       if (sourceSql) {
         const { rerenderChart } = await import("@/utils/api")
         const result = await rerenderChart(sourceSql, card.chart_type, card.title, card.category, newFilters)
         updateChart(card.id, {
           chart_data: result.chart,
           sql: result.sql || sourceSql,
-          base_sql: card.base_sql || sourceSql,
+          base_sql: card.base_sql || sourceSql,  // preserve base_sql
           filters: newFilters,
           loading: false,
         })
@@ -729,17 +768,6 @@ export default function ChartCard({ card }: Props) {
           </GlassBtn>
         </div>
       </div>
-
-      {/* ── Per-card filter strip — always visible, SQL-aware ── */}
-      {!flipped && (
-        <CardFilterPanel
-          sql={card.sql || card.base_sql || ""}
-          filters={card.filters || {}}
-          color={cat.color}
-          glass={cat.glass}
-          onFilterChange={applyCardFilter}
-        />
-      )}
 
       {/* ── Active filter caption ── */}
       {!flipped && hasActiveFilters && (() => {
