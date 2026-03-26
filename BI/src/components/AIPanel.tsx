@@ -101,7 +101,7 @@ export default function AIPanel() {
     <div style={{
       width: 400, flexShrink: 0, display: "flex", flexDirection: "column",
       height: "100vh", background: "#FFFFFF",
-      borderRight: "1px solid #E8ECF0", overflow: "hidden",
+      borderLeft: "1px solid #E8ECF0", overflow: "hidden",
     }}>
       {/* ── Header ── */}
       <div style={{
