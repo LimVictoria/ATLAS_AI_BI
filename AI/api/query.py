@@ -167,11 +167,6 @@ def _sort_time(df: pd.DataFrame, x_col: str) -> pd.DataFrame:
 
 
 def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
-    """Build a Plotly chart JSON string. Never produces an empty chart —
-    falls back to table if the requested type cannot be built."""
-    if df is None or df.empty:
-        print(f"[_build_chart] empty dataframe for chart_type={chart_type} — returning empty table")
-        return _build_chart(pd.DataFrame({"No Data": ["Query returned no results"]}), {}, "table")
     df = _clean_df(df)
     x_col = metric.get("x_col")
     y_col = metric.get("y_col")
@@ -384,17 +379,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
         z_col_h = metric.get("z_col") or (numeric_cols_h[0] if numeric_cols_h else df.columns[-1])
         month_order = ["January","February","March","April","May","June",
                        "July","August","September","October","November","December"]
-        try:
-            pivot = df.pivot_table(index=y_col_h, columns=x_col_h, values=z_col_h, aggfunc="sum", fill_value=0)
-        except Exception as pivot_err:
-            print(f"[heatmap] pivot failed: {pivot_err}, falling back to bar")
-            return _build_chart(df, metric, "bar")
-        if len(pivot.columns) < 2:
-            print(f"[heatmap] pivot has only {len(pivot.columns)} column(s) — likely a WHERE filter is limiting data. Falling back to bar.")
-            return _build_chart(df, metric, "bar")
-        if len(pivot) < 1:
-            print("[heatmap] pivot has no rows — falling back to bar")
-            return _build_chart(df, metric, "bar")
+        pivot = df.pivot_table(index=y_col_h, columns=x_col_h, values=z_col_h, aggfunc="sum", fill_value=0)
         # Reorder months if present
         ordered_cols = [m for m in month_order if m in pivot.columns]
         if ordered_cols:
@@ -460,17 +445,9 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
         if size_c and size_c in df.columns:
             raw_sizes = df[size_c].astype(float)
             sizes = ((raw_sizes - raw_sizes.min()) / (raw_sizes.max() - raw_sizes.min() + 1) * 30 + 10).tolist()
-        # Fallback to first two numeric columns if specified cols not in df
-        num_cols_s = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-        if x_s not in df.columns:
-            x_s = num_cols_s[0] if num_cols_s else df.columns[0]
-        if y_s not in df.columns:
-            y_s = num_cols_s[1] if len(num_cols_s) > 1 else (num_cols_s[0] if num_cols_s else df.columns[-1])
-        if label_c not in df.columns:
-            label_c = next((c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])), df.columns[0])
         fig = go.Figure(go.Scatter(
-            x=df[x_s],
-            y=df[y_s],
+            x=df[x_s] if x_s in df.columns else df.iloc[:, 0],
+            y=df[y_s] if y_s in df.columns else df.iloc[:, 1],
             mode="markers+text",
             text=df[label_c].tolist() if label_c in df.columns else None,
             textposition="top center",
@@ -546,20 +523,51 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Stacked Bar ───────────────────────────────────────────────────────────
     elif chart_type == "stacked_bar":
-        # Detect group_col: second categorical column if not specified
-        all_cat_cols_sb = [c for c in df.columns if c.lower() in
-                           {"brand","fleet_segment","component_category","maintenance_type",
-                            "workshop_type","region","failure_type","criticality_level",
-                            "month_name","year_quarter","plate_number","workshop_name","component_name"}]
-        default_group = all_cat_cols_sb[1] if len(all_cat_cols_sb) > 1 else (all_cat_cols_sb[0] if all_cat_cols_sb else df.columns[0])
-        group_col = metric.get("group_col") or default_group
+        # group_col must be the DIMENSION column (component_category, maintenance_type etc.)
+        # x_col must be the ENTITY column (brand, workshop_name etc.)
+        # _infer_meta already separates these correctly — trust it
+        # Never re-derive group_col by column order — that's what caused the bug
+        group_col = metric.get("group_col")
+
+        if not group_col or group_col == x_col:
+            # _infer_meta didn't set it or set it wrong — find correct dimension col
+            # Dimension cols: things you break down BY (category/type dimensions)
+            _dim_priority = [
+                "component_category","maintenance_type","fleet_segment",
+                "workshop_type","failure_type","criticality_level","region",
+                "month_name","year_quarter",
+            ]
+            # Entity cols: things on the x axis (brands, workshops, trucks)
+            _entity_cols = {"brand","workshop_name","plate_number","component_name"}
+
+            # First try: pick the first dimension col that is NOT the x_col
+            for c in df.columns:
+                if c.lower() in [d.lower() for d in _dim_priority] and c != x_col:
+                    group_col = c
+                    break
+
+            # Second try: pick any non-numeric, non-x column
+            if not group_col or group_col == x_col:
+                for c in df.columns:
+                    if c != x_col and not pd.api.types.is_numeric_dtype(df[c]):
+                        group_col = c
+                        break
+
+        # If x_col is a dimension and group_col is an entity — they are swapped, fix it
+        _dim_set = {"component_category","maintenance_type","fleet_segment","workshop_type",
+                    "failure_type","criticality_level","region"}
+        _entity_set = {"brand","workshop_name","plate_number"}
+        if x_col and x_col.lower() in _dim_set and group_col and group_col.lower() in _entity_set:
+            x_col, group_col = group_col, x_col  # swap
+
         # Sort time axis if x is time-based
         if x_col and x_col.lower() in TIME_COLS_SET:
             df = _sort_time(df, x_col)
             df, x_display = _format_time_labels(df, x_col)
         else:
             x_display = x_col
-        groups = df[group_col].unique().tolist() if group_col in df.columns else []
+
+        groups = df[group_col].unique().tolist() if group_col and group_col in df.columns else []
         # Visually distinct palette — NOT a blue gradient
         distinct_palette = [
             "#2563EB","#DC2626","#059669","#D97706","#7C3AED",
@@ -574,7 +582,12 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
                 x=subset[x_display],
                 y=subset[y_col],
                 marker=dict(color=distinct_palette[i % len(distinct_palette)], line=dict(width=0)),
-                hovertemplate=f"<b>%{{x}}</b><br>{grp}: <b>%{{y:,.0f}}</b><extra></extra>",
+                hovertemplate=(
+                    f"<b>%{{x}}</b>"
+                    f"<br>{group_col.replace('_',' ').title()}: <b>{grp}</b>"
+                    f"<br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b>"
+                    f"<extra></extra>"
+                ),
             ))
         n_x = len(df[x_display].unique()) if x_display in df.columns else n
         stacked_layout = {**BASE, "barmode": "stack"}
