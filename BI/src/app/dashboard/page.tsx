@@ -24,8 +24,8 @@ export default function DashboardPage() {
       top: 0,
       left: 0,
     }}>
-      <AIPanel />
       <BIPanel />
+      <AIPanel />
     </div>
   )
 }
