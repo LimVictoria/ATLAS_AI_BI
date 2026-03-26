@@ -307,6 +307,11 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Pareto ────────────────────────────────────────────────────────────────
     elif chart_type == "pareto":
+        # Always aggregate to one row per x value — pareto is single-dimension only
+        # If data has multiple rows per x (e.g. brand x component), sum y first
+        if x_col and x_col in df.columns and y_col and y_col in df.columns:
+            if df[x_col].duplicated().any():
+                df = df.groupby(x_col, as_index=False)[y_col].sum()
         df_sorted = df.sort_values(by=y_col, ascending=False).reset_index(drop=True)
         total = df_sorted[y_col].sum()
         df_sorted["cumulative_pct"] = df_sorted[y_col].cumsum() / total * 100
