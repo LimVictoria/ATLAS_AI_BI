@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Send, Loader, Sparkles } from "lucide-react"
+import { Send, Loader, Sparkles, Clock } from "lucide-react"
 import { v4 as uuid } from "uuid"
 import { useDashboardStore } from "@/store/dashboard"
 import { sendChat, clearChatHistory, getDQWarnings } from "@/utils/api"
@@ -96,6 +96,13 @@ export default function AIPanel() {
   }
 
   const selectedCard = charts.find(c => c.selected)
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const fmtTime = (d: Date) => d.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+  const fmtDate = (d: Date) => d.toLocaleDateString("en-MY", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
 
   return (
     <div style={{
@@ -160,20 +167,15 @@ export default function AIPanel() {
           Every decision, grounded.
         </div>
 
-        {/* Category colour bar */}
-        <div style={{ display: "flex", gap: 3, marginTop: 10 }}>
-          {[
-            { c: "#3B82F6", l: "Cost" },
-            { c: "#7C3AED", l: "Downtime" },
-            { c: "#DC2626", l: "Failure" },
-            { c: "#059669", l: "Fleet" },
-            { c: "#D97706", l: "Workshop" },
-            { c: "#0891B2", l: "Time" },
-          ].map(({ c, l }) => (
-            <div key={l} title={l} style={{
-              flex: 1, height: 3, borderRadius: 99, background: c, opacity: 0.7,
-            }} />
-          ))}
+        {/* Datetime */}
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+          <Clock size={11} color="#475569" />
+          <span style={{ fontSize: 11, color: "#38BDF8", fontWeight: 600, letterSpacing: "0.04em", fontFamily: "'IBM Plex Mono', monospace" }}>
+            {fmtTime(now)}
+          </span>
+          <span style={{ fontSize: 10, color: "#475569", fontWeight: 400 }}>
+            {fmtDate(now)}
+          </span>
         </div>
       </div>
 
