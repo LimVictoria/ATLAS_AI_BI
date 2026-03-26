@@ -380,10 +380,13 @@ CHART TYPE GUIDE:
         print(f"[sql_node] SQL={sql[:80]}...")
 
         long_sql = sql; wide_sql = ""; is_wide = False; pivot_col = ""
+        # Never auto-pivot when chart type is stacked_bar, heatmap, or line
+        # These chart types need the long format — pivoting destroys their data shape
+        _no_pivot_types = {"stacked_bar", "heatmap", "line", "scatter", "boxplot"}
         try:
             import re as _re
             gb_match = _re.search(r'GROUP\s+BY\s+(.+?)(?=ORDER|HAVING|LIMIT|$)', sql, _re.IGNORECASE | _re.DOTALL)
-            if gb_match:
+            if gb_match and parsed.get("chart_type", "bar") not in _no_pivot_types:
                 gb_cols = [c.strip() for c in gb_match.group(1).split(",")]
                 if len(gb_cols) == 2:
                     row_col = gb_cols[0].split(".")[-1].strip()
