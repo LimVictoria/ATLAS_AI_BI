@@ -669,7 +669,7 @@ export default function ChartCard({ card }: Props) {
   }
 
   const [showFilters, setShowFilters] = useState(true)
-  const canToggleFormat = !!(card.wide_sql && card.long_sql) && card.chart_type === "table"
+  const canToggleFormat = !!(card.wide_sql && card.long_sql)
 
   const saveTitle = () => { updateChart(card.id, { title: titleDraft.trim() || card.title }); setEditingTitle(false) }
 
