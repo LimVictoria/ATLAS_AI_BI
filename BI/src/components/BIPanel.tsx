@@ -1,10 +1,9 @@
 "use client"
-import { BarChart2, Layers } from "lucide-react"
+import { BarChart2, Layers, Clock } from "lucide-react"
 import { useDashboardStore } from "@/store/dashboard"
 import ChartCard from "./ChartCard"
 import { Responsive, WidthProvider } from "react-grid-layout"
 import { useEffect, useState } from "react"
-
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 export default function BIPanel() {
@@ -12,6 +11,14 @@ export default function BIPanel() {
   const selected = charts.filter(c => c.selected)
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
+
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const fmtTime = (d: Date) => d.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+  const fmtDate = (d: Date) => d.toLocaleDateString("en-MY", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
 
   const layouts = {
     lg: charts.map((card) => ({
@@ -42,7 +49,6 @@ export default function BIPanel() {
         <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", letterSpacing: "0.01em" }}>
           BI Board
         </span>
-
         {selected.length > 0 && (
           <span style={{
             fontSize: 10, color: "#38BDF8", marginLeft: 12, fontWeight: 600,
@@ -52,8 +58,7 @@ export default function BIPanel() {
             {selected.length} selected
           </span>
         )}
-
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
           {selected.length > 0 && (
             <button onClick={clearSelection} style={{
               fontSize: 11, color: "#94A3B8",
@@ -68,12 +73,16 @@ export default function BIPanel() {
               Clear selection
             </button>
           )}
-
-          {/* Category dots */}
-          {["#3B82F6","#7C3AED","#DC2626","#059669","#D97706","#0891B2"].map((c, i) => (
-            <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: c, opacity: 0.7 }} />
-          ))}
-
+          {/* Datetime */}
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <Clock size={11} color="#475569" />
+            <span style={{ fontSize: 11, color: "#38BDF8", fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: "0.04em" }}>
+              {fmtTime(now)}
+            </span>
+            <span style={{ fontSize: 10, color: "#475569" }}>
+              {fmtDate(now)}
+            </span>
+          </div>
           {charts.length > 0 && (
             <span style={{
               fontSize: 10, color: "#94A3B8",
@@ -86,7 +95,6 @@ export default function BIPanel() {
           )}
         </div>
       </div>
-
       {/* Canvas */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "16px 18px" }}>
         {charts.length === 0 ? (
@@ -94,7 +102,6 @@ export default function BIPanel() {
             height: "100%", display: "flex", flexDirection: "column",
             alignItems: "center", justifyContent: "center", gap: 14,
           }}>
-            {/* Colourful empty state illustration */}
             <div style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 4 }}>
               {[
                 { h: 40, c: "#3B82F6" }, { h: 60, c: "#7C3AED" },
