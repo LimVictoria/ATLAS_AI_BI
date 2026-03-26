@@ -324,7 +324,8 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             text=df_sorted[y_col].apply(lambda v: f"{v:,.0f}" if isinstance(v,(int,float)) else ""),
             textposition="outside",
             textfont=dict(size=9, color="#475569"),
-            hovertemplate=f"<b>%{{x}}</b><br>Value: <b>%{{y:,.1f}}</b><extra></extra>",
+            customdata=df_sorted["cumulative_pct"].tolist(),
+            hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><br>Cumulative: <b>%{{customdata:.1f}}%</b><extra></extra>",
             yaxis="y",
         ))
         fig.add_trace(go.Scatter(
@@ -367,7 +368,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             increasing=dict(marker=dict(color=color)),
             decreasing=dict(marker=dict(color=PALETTES["Failure"][2])),
             totals=dict(marker=dict(color="#1E293B")),
-            hovertemplate="<b>%{x}</b><br>Value: <b>%{y:,.1f}</b><extra></extra>",
+            hovertemplate=f"<b>%{{x}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{y:,.1f}}</b><extra></extra>",
         ))
         fig.update_layout(**BASE)
         fig.update_layout(
@@ -402,7 +403,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
             x=pivot.columns.tolist(),
             y=pivot.index.tolist(),
             colorscale=color_scale,
-            hovertemplate="<b>%{y}</b> · %{x}<br>Value: <b>%{z:,.0f}</b><extra></extra>",
+            hovertemplate=f"<b>%{{y}}</b> · %{{x}}<br>{z_col_h.replace('_',' ').title()}: <b>%{{z:,.0f}}</b><extra></extra>",
             showscale=True,
         ))
         fig.update_layout(
@@ -441,32 +442,117 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
 
     # ── Scatter ───────────────────────────────────────────────────────────────
     elif chart_type == "scatter":
-        x_s     = metric.get("x_col", "avg_downtime")
-        y_s     = metric.get("y_col", "avg_cost")
-        label_c = metric.get("label_col", x_col)
-        size_c  = metric.get("size_col")
-        color   = PALETTES.get(cat, PALETTES["General"])[1]
-        sizes   = None
+        # Find numeric cols for x/y axes
+        num_cols_s = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+        cat_cols_s = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+
+        x_s = metric.get("x_col") or (num_cols_s[0] if len(num_cols_s) > 0 else df.columns[0])
+        y_s = metric.get("y_col") or (num_cols_s[1] if len(num_cols_s) > 1 else num_cols_s[0] if num_cols_s else df.columns[-1])
+        if x_s not in df.columns: x_s = num_cols_s[0] if num_cols_s else df.columns[0]
+        if y_s not in df.columns: y_s = num_cols_s[1] if len(num_cols_s) > 1 else df.columns[-1]
+
+        size_c = metric.get("size_col")
+        sizes  = None
         if size_c and size_c in df.columns:
             raw_sizes = df[size_c].astype(float)
             sizes = ((raw_sizes - raw_sizes.min()) / (raw_sizes.max() - raw_sizes.min() + 1) * 30 + 10).tolist()
-        fig = go.Figure(go.Scatter(
-            x=df[x_s] if x_s in df.columns else df.iloc[:, 0],
-            y=df[y_s] if y_s in df.columns else df.iloc[:, 1],
-            mode="markers+text",
-            text=df[label_c].tolist() if label_c in df.columns else None,
-            textposition="top center",
-            textfont=dict(size=9, color="#475569"),
-            texttemplate="%{text}",
-            marker=dict(
-                size=sizes or 14,
-                color=color,
-                opacity=0.8,
-                line=dict(color="#FFFFFF", width=1.5),
-            ),
-            hovertemplate=f"<b>%{{text}}</b><br>X: <b>%{{x:,.2f}}</b><br>Y: <b>%{{y:,.2f}}</b><extra></extra>",
-        ))
-        fig.update_layout(**BASE)
+
+        # Label: join ALL categorical columns so "Scania · Engine" not just "Scania"
+        if cat_cols_s:
+            label_series = df[cat_cols_s[0]].astype(str)
+            for extra_cat in cat_cols_s[1:]:
+                label_series = label_series + " · " + df[extra_cat].astype(str)
+        else:
+            label_series = df.index.astype(str)
+
+        # Color by first categorical column if available — makes groups distinguishable
+        distinct_palette = [
+            "#2563EB","#DC2626","#059669","#D97706","#7C3AED",
+            "#0891B2","#DB2777","#EA580C","#65A30D","#9333EA",
+        ]
+        if cat_cols_s:
+            color_col = cat_cols_s[0]
+            unique_cats = df[color_col].unique().tolist()
+            color_map = {v: distinct_palette[i % len(distinct_palette)] for i, v in enumerate(unique_cats)}
+            marker_colors = df[color_col].map(color_map).tolist()
+        else:
+            marker_colors = PALETTES.get(cat, PALETTES["General"])[1]
+
+        # Build customdata with all categorical cols for rich tooltip
+        custom_cols = cat_cols_s + [c for c in num_cols_s if c not in {x_s, y_s}]
+        customdata = df[custom_cols].values.tolist() if custom_cols else None
+
+        # Build tooltip lines for each extra column
+        tooltip_lines = ""
+        for i, c in enumerate(custom_cols):
+            fmt = ",.1f" if pd.api.types.is_numeric_dtype(df[c]) else ""
+            if fmt:
+                tooltip_lines += f"<br>{c.replace('_',' ').title()}: <b>%{{customdata[{i}]:,.1f}}</b>"
+            else:
+                tooltip_lines += f"<br>{c.replace('_',' ').title()}: <b>%{{customdata[{i}]}}</b>"
+
+        fig = go.Figure()
+        if cat_cols_s:
+            # Plot one trace per category so legend shows groups
+            color_col = cat_cols_s[0]
+            for i, grp in enumerate(df[color_col].unique().tolist()):
+                mask = df[color_col] == grp
+                subset = df[mask]
+                sub_labels = label_series[mask]
+                sub_custom = subset[custom_cols].values.tolist() if custom_cols else None
+                fig.add_trace(go.Scatter(
+                    x=subset[x_s], y=subset[y_s],
+                    mode="markers+text",
+                    name=str(grp),
+                    text=sub_labels.tolist(),
+                    textposition="top center",
+                    textfont=dict(size=9, color="#475569"),
+                    customdata=sub_custom,
+                    marker=dict(
+                        size=sizes if sizes else 13,
+                        color=distinct_palette[i % len(distinct_palette)],
+                        opacity=0.85,
+                        line=dict(color="#FFFFFF", width=1.5),
+                    ),
+                    hovertemplate=(
+                        f"<b>%{{text}}</b>"
+                        f"<br>{x_s.replace('_',' ').title()}: <b>%{{x:,.2f}}</b>"
+                        f"<br>{y_s.replace('_',' ').title()}: <b>%{{y:,.2f}}</b>"
+                        + tooltip_lines +
+                        "<extra></extra>"
+                    ),
+                ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=df[x_s], y=df[y_s],
+                mode="markers+text",
+                text=label_series.tolist(),
+                textposition="top center",
+                textfont=dict(size=9, color="#475569"),
+                customdata=customdata,
+                marker=dict(
+                    size=sizes or 13,
+                    color=PALETTES.get(cat, PALETTES["General"])[1],
+                    opacity=0.85,
+                    line=dict(color="#FFFFFF", width=1.5),
+                ),
+                hovertemplate=(
+                    f"<b>%{{text}}</b>"
+                    f"<br>{x_s.replace('_',' ').title()}: <b>%{{x:,.2f}}</b>"
+                    f"<br>{y_s.replace('_',' ').title()}: <b>%{{y:,.2f}}</b>"
+                    + tooltip_lines +
+                    "<extra></extra>"
+                ),
+            ))
+        scatter_layout = {**BASE}
+        scatter_layout["showlegend"] = len(cat_cols_s) > 0
+        scatter_layout["legend"] = dict(orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1, font=dict(size=10), bgcolor="rgba(0,0,0,0)")
+        fig.update_layout(**scatter_layout)
+        fig.update_layout(
+            xaxis_title=x_s.replace("_", " ").title(),
+            yaxis_title=y_s.replace("_", " ").title(),
+        )
 
     # ── Treemap ───────────────────────────────────────────────────────────────
     elif chart_type == "treemap":
@@ -487,7 +573,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
                 parents=["" if p == lbl else p for p, lbl in zip(parents_list, labels_list)],
                 values=values_list,
                 textinfo="label+value+percent root",
-                hovertemplate="<b>%{label}</b><br>Value: <b>%{value:,.0f}</b><br>%{percentRoot:.1%} of total<extra></extra>",
+                hovertemplate=f"<b>%{{label}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{value:,.0f}}</b><br>%{{percentRoot:.1%}} of total<extra></extra>",
                 marker=dict(colorscale=[[0, PALETTES.get(cat,PALETTES["General"])[4]],
                                          [1, PALETTES.get(cat,PALETTES["General"])[0]]]),
             ))
@@ -497,7 +583,7 @@ def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
                 parents=[""] * n,
                 values=df[y_col].tolist(),
                 textinfo="label+value+percent root",
-                hovertemplate="<b>%{label}</b><br>Value: <b>%{value:,.0f}</b><extra></extra>",
+                hovertemplate=f"<b>%{{label}}</b><br>{y_col.replace('_',' ').title()}: <b>%{{value:,.0f}}</b><extra></extra>",
                 marker=dict(colorscale=[[0, PALETTES.get(cat,PALETTES["General"])[4]],
                                          [1, PALETTES.get(cat,PALETTES["General"])[0]]]),
             ))
