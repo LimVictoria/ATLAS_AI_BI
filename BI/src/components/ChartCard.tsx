@@ -659,10 +659,10 @@ export default function ChartCard({ card }: Props) {
       })
       updateChart(card.id, {
         chart_data: result.chart,
-        chart_type: result.chart_type as any,
+        chart_type: card.chart_type,  // never change chart type on format toggle
         sql: result.sql,
         is_wide: newIsWide,
-        available_charts: result.available_charts || card.available_charts,
+        available_charts: card.available_charts,  // preserve existing chart type options
         loading: false,
       })
     } catch { updateChart(card.id, { loading: false }) }
