@@ -382,7 +382,8 @@ CHART TYPE GUIDE:
         long_sql = sql; wide_sql = ""; is_wide = False; pivot_col = ""
         # Never auto-pivot when chart type is stacked_bar, heatmap, or line
         # These chart types need the long format — pivoting destroys their data shape
-        _no_pivot_types = {"stacked_bar", "heatmap", "line", "scatter", "boxplot"}
+        # Only pivot for table chart type — wide format is useful for tables only
+        _no_pivot_types = {"stacked_bar", "heatmap", "line", "scatter", "boxplot", "bar", "pie", "pareto", "waterfall", "treemap", "histogram"}
         try:
             import re as _re
             gb_match = _re.search(r'GROUP\s+BY\s+(.+?)(?=ORDER|HAVING|LIMIT|$)', sql, _re.IGNORECASE | _re.DOTALL)
