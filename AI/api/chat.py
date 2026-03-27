@@ -85,7 +85,16 @@ def build_board_context(board_context) -> str:
                 if c.id in (board_context.selected_ids or [])]
     if selected:
         s = selected[0]
-        lines.append(f"\nSELECTED CARD: id={s.id}, title='{s.title}', chart_type={s.chart_type}")
+        # Include base_sql so sql_node knows what dimensions the selected card was showing
+        card_base_sql = getattr(s, "base_sql", "") or getattr(s, "sql", "") or ""
+        active_filters = s.filters or {}
+        filter_desc = ""
+        if active_filters:
+            parts = [f"{k}={v}" for k, v in active_filters.items() if v]
+            filter_desc = f" | ACTIVE_FILTERS: {', '.join(parts)}"
+        lines.append(f"\nSELECTED CARD: id={s.id}, title='{s.title}', chart_type={s.chart_type}{filter_desc}")
+        if card_base_sql:
+            lines.append(f"SELECTED CARD BASE_SQL: {card_base_sql}")
     else:
         lines.append("\nSELECTED CARD: none")
     return "\n".join(lines) + "\n"
@@ -105,6 +114,7 @@ class BoardCard(BaseModel):
     filters: Optional[dict] = {}
     selected: Optional[bool] = False
     sql: Optional[str] = ""
+    base_sql: Optional[str] = ""
 
 class BoardContext(BaseModel):
     charts_on_canvas: Optional[list[BoardCard]] = []
@@ -373,151 +383,6 @@ def toggle_format(req: ToggleFormatRequest):
         "sql":              sql,
         "is_wide":          req.is_wide,
     }
-
-
-# ── Star schema join map ──────────────────────────────────────────────────────
-# fact_maintenance_event is the central fact table
-_STAR_JOIN_MAP = {
-    "dim_truck":     {"alias": "dt", "fk": "f.truck_id = dt.truck_id"},
-    "dim_component": {"alias": "dc", "fk": "f.component_id = dc.component_id"},
-    "dim_workshop":  {"alias": "dw", "fk": "f.workshop_id = dw.workshop_id"},
-    "dim_date":      {"alias": "dd", "fk": "f.date_id = dd.date_id"},
-}
-
-# Column → source table mapping (built from actual data files)
-_COL_SOURCE_TABLE: dict = {}
-
-def _get_col_source_table() -> dict:
-    """Build column → source table mapping from loaded star schema tables."""
-    global _COL_SOURCE_TABLE
-    if _COL_SOURCE_TABLE:
-        return _COL_SOURCE_TABLE
-    try:
-        from db.duckdb_session import _tables_meta
-        # Priority: fact table first, then dims (dims override for their own columns)
-        priority = ["fact_maintenance_event", "dim_truck", "dim_component", "dim_workshop", "dim_date"]
-        result = {}
-        for tname in priority:
-            if tname in _tables_meta:
-                for col in _tables_meta[tname]["df"].columns:
-                    result[col.lower()] = tname
-        _COL_SOURCE_TABLE = result
-    except Exception:
-        pass
-    return _COL_SOURCE_TABLE
-
-
-def derive_source_sql(view_sql: str) -> str:
-    """
-    Derive a star schema source SQL from a v_maintenance_full query.
-    Returns the equivalent JOIN query using source tables with aliases.
-    """
-    import re as _re
-
-    if "v_maintenance_full" not in view_sql.lower():
-        return view_sql
-
-    col_map = _get_col_source_table()
-
-    # Use proper raw strings for regex word boundaries
-    pat_select = _re.compile(r"SELECT\s+(.+?)\s+FROM", _re.IGNORECASE | _re.DOTALL)
-    pat_where  = _re.compile(r"WHERE\s+(.+?)(?=GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
-    pat_group  = _re.compile(r"GROUP\s+BY\s+(.+?)(?=ORDER\s+BY|HAVING|LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
-    pat_order  = _re.compile(r"ORDER\s+BY\s+(.+?)(?=LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
-    pat_words  = _re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*")
-    pat_qualified = _re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*\.[a-zA-Z_][a-zA-Z_0-9]*")
-
-    select_match = pat_select.search(view_sql)
-    if not select_match:
-        return view_sql
-
-    where_match = pat_where.search(view_sql)
-    group_match = pat_group.search(view_sql)
-    order_match = pat_order.search(view_sql)
-
-    # Find needed dim tables by scanning ALL words in SQL
-    all_words = set(w.lower() for w in pat_words.findall(view_sql))
-    needed_dims = set()
-    for col in all_words:
-        src = col_map.get(col)
-        if src and src != "fact_maintenance_event" and src in _STAR_JOIN_MAP:
-            needed_dims.add(src)
-
-    # Build alias map
-    alias_map = {"fact_maintenance_event": "f"}
-    for dim in needed_dims:
-        alias_map[dim] = _STAR_JOIN_MAP[dim]["alias"]
-
-    SQL_KEYWORDS = {
-        "from","where","group","by","order","having","limit","and","or","not",
-        "in","like","between","is","null","true","false","as","on","join",
-        "select","sum","avg","count","max","min","round","nullif","case",
-        "when","then","else","end","asc","desc","distinct","inner","left",
-        "right","outer","cross","using","over","partition","window"
-    }
-
-    def qualify_token(word: str) -> str:
-        src = col_map.get(word.lower())
-        if src and src in alias_map:
-            return f"{alias_map[src]}.{word}"
-        return word
-
-    def qualify_expr(expr: str) -> str:
-        """Qualify bare column names — skip keywords, numbers, already-qualified names."""
-        # Find already qualified names and protect them
-        qualified_spans = set()
-        for m in pat_qualified.finditer(expr):
-            for i in range(m.start(), m.end()):
-                qualified_spans.add(i)
-
-        result = []
-        i = 0
-        while i < len(expr):
-            if i in qualified_spans:
-                result.append(expr[i])
-                i += 1
-                continue
-            # Try to match a word token
-            m = _re.match(r"[a-zA-Z_][a-zA-Z_0-9]*", expr[i:])
-            if m:
-                word = m.group(0)
-                if word.lower() not in SQL_KEYWORDS and not word.isdigit():
-                    result.append(qualify_token(word))
-                else:
-                    result.append(word)
-                i += len(word)
-            else:
-                result.append(expr[i])
-                i += 1
-        return "".join(result)
-
-    # Build FROM + JOINs
-    joins = ["FROM fact_maintenance_event f"]
-    for dim in sorted(needed_dims):
-        j = _STAR_JOIN_MAP[dim]
-        joins.append(f"JOIN {dim} {j['alias']} ON {j['fk']}")
-
-    select_qualified = qualify_expr(select_match.group(1))
-    where_clause  = f"WHERE {qualify_expr(where_match.group(1).strip())}" if where_match else ""
-    group_clause  = f"GROUP BY {qualify_expr(group_match.group(1).strip())}" if group_match else ""
-    order_clause  = f"ORDER BY {qualify_expr(order_match.group(1).strip())}" if order_match else ""
-
-    parts = ["-- Star schema equivalent (for data engineers)", f"SELECT {select_qualified}"]           + joins           + [p for p in [where_clause, group_clause, order_clause] if p]
-
-    return "\n".join(parts)
-
-
-class DeriveSqlRequest(BaseModel):
-    sql: str
-
-@router.post("/derive_source_sql")
-def derive_source_sql_endpoint(req: DeriveSqlRequest):
-    """Derive star schema source SQL from a v_maintenance_full view query."""
-    try:
-        source_sql = derive_source_sql(req.sql)
-        return {"source_sql": source_sql, "view_sql": req.sql}
-    except Exception as e:
-        return {"source_sql": req.sql, "view_sql": req.sql, "error": str(e)}
 
 
 class RerenderRequest(BaseModel):
