@@ -14,10 +14,10 @@ export interface ChartCard {
   available_charts: ChartType[]
   sql?: string
   base_sql?: string
-  long_sql?: string        // original GROUP BY SQL (long format)
-  wide_sql?: string        // CASE WHEN pivot SQL (wide format)
-  is_wide?: boolean        // currently showing wide format
-  pivot_col?: string       // the column being pivoted (e.g. fleet_segment)
+  long_sql?: string
+  wide_sql?: string
+  is_wide?: boolean
+  pivot_col?: string
   filter_suggestions?: Array<{dim: string; value: string; label: string}>
   showFilters?: boolean
   selected: boolean
@@ -64,16 +64,16 @@ const nextPos = (existingCount = 0) => {
   return { x: col * 6, y: row * 6, w: 6, h: 6 }
 }
 
-// Serialise chart for Supabase (strip non-serialisable bits)
+// Keys that change too frequently or are too large to persist on every update
+const SKIP_PERSIST_KEYS = new Set(["loading", "chart_data", "showFilters", "selected"])
+
 const serialiseChart = (c: ChartCard) => ({
   id: c.id,
   metric_id: c.metric_id,
   title: c.title,
   category: c.category,
   chart_type: c.chart_type,
-  // Strip chart_data from persistence — it's Plotly JSON and too large for Supabase index
-  // Cards reload from SQL when the board is loaded
-  chart_data: null,
+  chart_data: null,              // always strip — too large for Supabase, regenerated from SQL
   filters: c.filters,
   available_charts: c.available_charts,
   sql: c.sql || "",
@@ -88,9 +88,14 @@ const serialiseChart = (c: ChartCard) => ({
   x: c.x, y: c.y, w: c.w, h: c.h,
 })
 
+// Debounce board saves — avoid hammering Supabase on rapid updates
+let _saveTimer: ReturnType<typeof setTimeout> | null = null
 const persistBoard = (charts: ChartCard[], userId: string) => {
-  const serialised = charts.map(serialiseChart)
-  saveBoard(serialised, userId).catch(e => console.warn("[Board] save failed:", e))
+  if (_saveTimer) clearTimeout(_saveTimer)
+  _saveTimer = setTimeout(() => {
+    const serialised = charts.map(serialiseChart)
+    saveBoard(serialised, userId).catch(e => console.warn("[Board] save failed:", e))
+  }, 1500)
 }
 
 export const useDashboardStore = create<DashboardStore>((set, get) => ({
@@ -99,7 +104,6 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   userId: "default",
   boardLoaded: false,
   messagesLoaded: false,
-
   charts: [],
 
   addChart: (card) => {
@@ -119,10 +123,10 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   updateChart: (id, patch) => {
     const newCharts = get().charts.map(c => c.id === id ? { ...c, ...patch } : c)
     set({ charts: newCharts })
-    // Persist unless it's only a loading state change
+    // Skip persist if ALL changed keys are noise keys
     const keys = Object.keys(patch)
-    const loadingOnly = keys.length === 1 && keys[0] === "loading"
-    if (!loadingOnly) {
+    const shouldPersist = keys.some(k => !SKIP_PERSIST_KEYS.has(k))
+    if (shouldPersist) {
       persistBoard(newCharts, get().userId)
     }
   },
@@ -147,37 +151,34 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       const resp = await loadBoard(get().userId)
       const saved: ChartCard[] = (resp.board_state || []).map((c: any) => ({
         ...c,
-        // Cards saved without chart_data need to be marked loading so they re-render from SQL
-        chart_data: c.chart_data || null,
-        loading: !c.chart_data && !!c.sql,
+        chart_data: null,                         // always null from server — regenerated below
+        loading: !!c.sql,                         // mark loading if has SQL to rerender
+        showFilters: true,
       }))
-      // Keep cards that have SQL (will rerender) or chart_data — discard truly empty cards
-      const valid = saved.filter(c => {
-        if (!c.sql && !c.chart_data) return false
-        if (c.chart_data) {
-          const raw = typeof c.chart_data === "string" ? c.chart_data : JSON.stringify(c.chart_data)
-          if (raw.includes("Metric Removed") || raw.includes("metric_removed")) return false
-        }
-        return true
-      })
+      // Discard cards with no SQL and no chart_data — they can't be recovered
+      const valid = saved.filter(c => !!c.sql)
       set({ charts: valid, boardLoaded: true })
       _cardCounter = valid.length
 
-      // Auto-rerender cards that have SQL but no chart_data
+      // Auto-rerender all cards from their stored SQL
       const { rerenderChart } = await import("@/utils/api")
       for (const card of valid) {
-        if (!card.chart_data && card.sql) {
-          try {
-            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, card.filters || {})
-            get().updateChart(card.id, {
-              chart_data: result.chart,
-              chart_type: result.chart_type || card.chart_type,
-              available_charts: result.available_charts || card.available_charts,
-              loading: false,
-            })
-          } catch {
-            get().updateChart(card.id, { loading: false })
-          }
+        try {
+          const result = await rerenderChart(
+            card.base_sql || card.sql || "",
+            card.chart_type,
+            card.title,
+            card.category,
+            card.filters || {}
+          )
+          get().updateChart(card.id, {
+            chart_data: result.chart,
+            chart_type: (result.chart_type || card.chart_type) as ChartType,
+            available_charts: result.available_charts || card.available_charts,
+            loading: false,
+          })
+        } catch {
+          get().updateChart(card.id, { loading: false })
         }
       }
     } catch (e) {
@@ -187,13 +188,10 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   },
 
   messages: [],
-
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
-
   updateMessage: (id, patch) => set((s) => ({
     messages: s.messages.map(m => m.id === id ? { ...m, ...patch } : m)
   })),
-
   clearMessages: () => set({ messages: [] }),
 
   loadMessagesFromServer: async () => {
@@ -211,6 +209,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       set({ messages: msgs.length > 0 ? msgs : get().messages, messagesLoaded: true })
     } catch (e) {
       console.warn("[Messages] load failed:", e)
+      set({ messagesLoaded: true })
     }
   },
 }))
