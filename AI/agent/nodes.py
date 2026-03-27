@@ -377,9 +377,9 @@ SQL FILTER RULES - CRITICAL:
 - When user asks for "date", "month", "year" without specifying which date, always use service_date columns: year (INTEGER), month (INTEGER), year_month (derived). These are the maintenance event date. Only use purchase_date or year_manufactured if user explicitly asks for truck purchase or manufacturing date
 
 CHART TYPE GUIDE:
-- line: when query groups by year_month, year_quarter, month_name (time series)
-- bar: category comparisons (brand, component, workshop)
-- stacked_bar: when query has 2 categorical dims (brand + component_category)
+- line: when query has time column (year_month, year_quarter, month_name) AND only one numeric series — NO categorical breakdown
+- stacked_bar: when query has time column + categorical column (e.g. year_month + brand, month + maintenance_type) — ALWAYS use stacked_bar not line when a categorical dimension is present alongside time
+- bar: category comparisons with no time column (brand, component, workshop)
 - table: when user asks for a table, or query has many columns (>4)
 - scatter: when query returns 2 numeric columns for correlation
 - pie: proportions, max 8 categories
@@ -504,6 +504,11 @@ async def chart_node(state: AgentState) -> AgentState:
         chart_type = "bar"
     if chart_type == "stacked_bar" and not meta.get("group_col"):
         chart_type = "bar"
+    # Override: if LLM chose line/bar but data has time + categorical group → stacked_bar
+    # This is the most informative chart for time × category data
+    if chart_type in {"line", "bar"} and meta.get("group_col") and        meta.get("x_col") and meta["x_col"].lower() in TIME_COLS:
+        chart_type = "stacked_bar"
+        print(f"[chart_node] overriding {chart_type} → stacked_bar (time + group_col={meta['group_col']})")
     try:
         chart_json = _build_chart(df, meta, chart_type)
     except Exception as e:
