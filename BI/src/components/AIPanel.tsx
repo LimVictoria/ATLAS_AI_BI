@@ -64,6 +64,7 @@ export default function AIPanel() {
       chart_type: c.chart_type, filters: c.filters || {},
       selected: c.selected || false,
       sql: c.sql || "",
+      base_sql: c.base_sql || c.sql || "",
     })),
     selected_ids: charts.filter(c => c.selected).map(c => c.id),
   }), [charts])
