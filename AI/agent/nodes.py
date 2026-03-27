@@ -576,14 +576,33 @@ Return ONLY valid JSON, no markdown."""
             parsed = _parse_json(raw)
 
             if parsed.get("action") == "chart_type":
-                return {**state, "narrative": f"Done — switched to {parsed['chart_type']} chart.",
-                        "ui_actions": [{"action": "modify_chart", "card_id": card_id, "chart_type": parsed["chart_type"]}]}
+                # Re-route through sql_node — generates new SQL with new chart type
+                # Adds a NEW card alongside existing one (user can delete old)
+                new_type = parsed["chart_type"]
+                print(f"[board_node] chart_type change -> re-routing to sql_node for new card")
+                return {**state,
+                    "intent": "visualise",
+                    "sql": "", "sql_error": "", "sql_retries": 0,
+                    "replace_card_id": None,
+                    "chart_type": new_type,
+                }
 
             elif parsed.get("action") == "apply_filter":
-                dim = parsed.get("dim", ""); values = parsed.get("values", [])
-                narrative = f"Done — filtered {dim.replace('_',' ')} to {', '.join(str(v) for v in values)}." if values else f"Done — cleared the {dim.replace('_',' ')} filter."
-                return {**state, "narrative": narrative,
-                        "ui_actions": [{"action": "apply_filter", "card_id": card_id, "dim": dim, "values": values}]}
+                # Re-route through sql_node — generates new SQL with filter baked in
+                # Adds a NEW card alongside existing one (user can delete old)
+                dim = parsed.get("dim", "")
+                values = parsed.get("values", [])
+                val_str = ", ".join(str(v) for v in values) if values else "none"
+                filter_hint = f" Filter {dim.replace('_',' ')} to {val_str}." if values else f" Remove {dim.replace('_',' ')} filter."
+                print(f"[board_node] apply_filter -> re-routing to sql_node: {dim}={values}")
+                # Inject filter intent into user message so sql_node picks it up
+                augmented_msg = state["user_message"] + filter_hint
+                return {**state,
+                    "intent": "visualise",
+                    "user_message": augmented_msg,
+                    "sql": "", "sql_error": "", "sql_retries": 0,
+                    "replace_card_id": None,
+                }
 
             elif parsed.get("action") == "filter_ui":
                 dim = parsed.get("dim", "")
@@ -739,6 +758,10 @@ def route_intent(state: AgentState) -> str:
     return "sql_node"
 
 def route_after_board(state: AgentState) -> str:
+    # Re-routed from board_node (apply_filter / chart_type change) — go to sql_node
+    if state.get("intent") == "visualise" and not state.get("sql"):
+        return "sql_node"
+    # SQL modification from board_node already has SQL — go straight to chart_node
     if state.get("intent") == "visualise" and state.get("sql"):
         return "chart_node"
     return "memory_node"
