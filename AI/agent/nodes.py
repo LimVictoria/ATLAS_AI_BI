@@ -374,6 +374,7 @@ SQL FILTER RULES - CRITICAL:
 - When in doubt, write SQL with NO WHERE — let the user apply filters themselves
 - ALWAYS query v_maintenance_full — never source tables directly
 - For year+month time series: use CAST(year AS VARCHAR) || '-' || LPAD(CAST(month AS VARCHAR),2,'0') AS year_month instead of selecting year and month as separate columns
+- When user asks for "date", "month", "year" without specifying which date, always use service_date columns: year (INTEGER), month (INTEGER), year_month (derived). These are the maintenance event date. Only use purchase_date or year_manufactured if user explicitly asks for truck purchase or manufacturing date
 
 CHART TYPE GUIDE:
 - line: when query groups by year_month, year_quarter, month_name (time series)
@@ -578,7 +579,8 @@ async def board_node(state: AgentState) -> AgentState:
         if not card_id:
             return {**state, "narrative": "Please select a card first by clicking on it, then ask me to change it.", "ui_actions": []}
 
-        card_chart_type = "table"; card_title = "Query Result"; card_active_filters = ""
+        card_chart_type = "table"; card_title = "Query Result"
+        card_active_filters = ""; card_base_sql = ""
         for line in board.split("\n"):
             if f"id={card_id}" in line:
                 ct_m = re.search(r"chart_type=(\w+)", line)
@@ -587,11 +589,15 @@ async def board_node(state: AgentState) -> AgentState:
                 if t_m: card_title = t_m.group(1)
                 f_m = re.search(r"ACTIVE_FILTERS: ([^|\n]+)", line)
                 if f_m: card_active_filters = f_m.group(1).strip()
+            if "SELECTED CARD BASE_SQL:" in line:
+                card_base_sql = line.split("SELECTED CARD BASE_SQL:", 1)[-1].strip()
 
         filter_notice = f"\nACTIVE FILTERS ON THIS CARD: {card_active_filters}" if card_active_filters else "\nACTIVE FILTERS ON THIS CARD: none"
+        # Dimensions context — tells sql_node what the card was showing
+        sql_context = f"\nORIGINAL CARD SQL: {card_base_sql}" if card_base_sql else ""
 
         system = f"""You are ATLAS. A card is selected on the BI board.
-SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}{filter_notice}
+SELECTED CARD: id={card_id}, title='{card_title}', chart_type={card_chart_type}{filter_notice}{sql_context}
 {board}
 {_get_schema_guide()}
 
@@ -619,8 +625,11 @@ Return ONLY valid JSON, no markdown."""
                 # Adds a NEW card alongside existing one (user can delete old)
                 new_type = parsed["chart_type"]
                 print(f"[board_node] chart_type change -> re-routing to sql_node for new card")
+                # Inject original card SQL so sql_node preserves dimensions
+                base_hint = f" The original card SQL was: {card_base_sql}. Preserve the same dimensions but change chart type to {new_type}." if card_base_sql else ""
                 return {**state,
                     "intent": "visualise",
+                    "user_message": state["user_message"] + base_hint,
                     "sql": "", "sql_error": "", "sql_retries": 0,
                     "replace_card_id": None,
                     "chart_type": new_type,
@@ -633,9 +642,10 @@ Return ONLY valid JSON, no markdown."""
                 values = parsed.get("values", [])
                 val_str = ", ".join(str(v) for v in values) if values else "none"
                 filter_hint = f" Filter {dim.replace('_',' ')} to {val_str}." if values else f" Remove {dim.replace('_',' ')} filter."
+                # Inject original card SQL so sql_node preserves dimensions
+                base_hint = f" The original card SQL was: {card_base_sql}. Keep the same dimensions and grouping, just add the filter." if card_base_sql else ""
                 print(f"[board_node] apply_filter -> re-routing to sql_node: {dim}={values}")
-                # Inject filter intent into user message so sql_node picks it up
-                augmented_msg = state["user_message"] + filter_hint
+                augmented_msg = state["user_message"] + filter_hint + base_hint
                 return {**state,
                     "intent": "visualise",
                     "user_message": augmented_msg,
