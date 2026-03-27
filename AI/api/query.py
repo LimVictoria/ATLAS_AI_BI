@@ -168,6 +168,23 @@ def _sort_time(df: pd.DataFrame, x_col: str) -> pd.DataFrame:
 
 def _build_chart(df: pd.DataFrame, metric: dict, chart_type: str) -> str:
     df = _clean_df(df)
+
+    # Derive year_month from separate year+month columns if needed
+    # Handles: AI path (chart_node sets x_col="_year_month_combined_")
+    # AND: rerenderChart path (x_col may be wrong or missing for year+month data)
+    x_col_raw = metric.get("x_col", "")
+    if x_col_raw == "_year_month_combined_" or (
+        "year" in df.columns and "month" in df.columns and
+        "year_month" not in df.columns and
+        x_col_raw not in df.columns
+    ):
+        df = df.copy()
+        df["year_month"] = (
+            df["year"].astype(str) + "-" +
+            df["month"].astype(int).astype(str).str.zfill(2)
+        )
+        metric = {**metric, "x_col": "year_month"}
+
     x_col = metric.get("x_col")
     y_col = metric.get("y_col")
     cat   = metric.get("category", "General")
