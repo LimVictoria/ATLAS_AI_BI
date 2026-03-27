@@ -518,14 +518,18 @@ def rerender_chart(req: RerenderRequest):
         if numeric_cols:
             meta["z_col"] = numeric_cols[0]
 
-    # For stacked_bar: need x_col (primary cat), y_col (numeric), group_col (secondary cat)
+    # For stacked_bar: use _infer_meta which correctly separates time/entity/dimension cols
+    # cat_cols_found can miss brand when year/month are integer cols that look categorical
     elif chart_type == "stacked_bar":
-        if len(cat_cols_found) >= 2:
-            meta["x_col"] = cat_cols_found[0]
-            meta["group_col"] = cat_cols_found[1]
-        elif len(cat_cols_found) == 1 and not meta.get("group_col"):
-            meta["group_col"] = cat_cols_found[0]
-        if numeric_cols:
+        # _infer_meta already ran above and set x_col/group_col correctly
+        # Only override if it didn't set group_col
+        if not meta.get("group_col"):
+            if len(cat_cols_found) >= 2:
+                meta["x_col"] = cat_cols_found[0]
+                meta["group_col"] = cat_cols_found[1]
+            elif len(cat_cols_found) == 1:
+                meta["group_col"] = cat_cols_found[0]
+        if numeric_cols and not meta.get("y_col"):
             meta["y_col"] = numeric_cols[0]
 
     # For scatter: need x_col and y_col both numeric, label_col for text
