@@ -226,6 +226,13 @@ def _smart_available_charts(columns: list[str], df: pd.DataFrame, chart_type: st
         available += ["line", "bar"]
     if n_cat >= 2 and n_num >= 1:
         available += ["stacked_bar", "heatmap"]
+    # time + 1 categorical is the stacked_bar use case (e.g. year_month + brand)
+    # also covers year+month+brand where year/month are numeric time cols → n_cat=1
+    if n_time >= 1 and n_cat >= 1 and n_num >= 1:
+        if "stacked_bar" not in available:
+            available += ["stacked_bar"]
+        if "heatmap" not in available:
+            available += ["heatmap"]
     if n_num >= 2:
         available += ["scatter"]
     if n_num >= 1:
