@@ -167,6 +167,9 @@ def _infer_meta(columns: list[str]) -> dict:
             x_col = time_found[cols_lower_list.index("year_month")]
         elif "year_quarter" in cols_lower_list:
             x_col = time_found[cols_lower_list.index("year_quarter")]
+        elif "year" in cols_lower_list and "month" in cols_lower_list:
+            # Two time cols: year + month — mark for combination into year_month
+            x_col = "_year_month_combined_"  # signal to chart_node to derive this column
         else:
             x_col = time_found[0]
     else:
@@ -370,6 +373,7 @@ SQL FILTER RULES - CRITICAL:
 - "show total cost by brand for 2023" = WHERE year = 2023
 - When in doubt, write SQL with NO WHERE — let the user apply filters themselves
 - ALWAYS query v_maintenance_full — never source tables directly
+- For year+month time series: use CAST(year AS VARCHAR) || '-' || LPAD(CAST(month AS VARCHAR),2,'0') AS year_month instead of selecting year and month as separate columns
 
 CHART TYPE GUIDE:
 - line: when query groups by year_month, year_quarter, month_name (time series)
@@ -480,6 +484,18 @@ async def chart_node(state: AgentState) -> AgentState:
     meta = _infer_meta(cols)
     meta["category"] = state.get("chart_category", "Cost")
     chart_type = state.get("chart_type", "bar")
+
+    # If _infer_meta detected year+month columns, derive year_month combined column
+    if meta.get("x_col") == "_year_month_combined_":
+        if "year" in df.columns and "month" in df.columns:
+            df["year_month"] = (
+                df["year"].astype(str) + "-" +
+                df["month"].astype(int).astype(str).str.zfill(2)
+            )
+            cols = df.columns.tolist()
+            meta["x_col"] = "year_month"
+        else:
+            meta["x_col"] = cols[0]
     cols_lower = [c.lower() for c in cols]
     if chart_type == "scatter" and not (sum(1 for c in cols if str(df[c].dtype) in NUMERIC_TYPES) >= 2):
         chart_type = "bar"
