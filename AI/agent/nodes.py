@@ -172,7 +172,30 @@ def _infer_meta(columns: list[str]) -> dict:
     else:
         x_col = cat_found[0] if cat_found else columns[0]
     y_col = num_found[0] if num_found else (columns[-1] if len(columns) > 1 else columns[0])
-    group_col = group_found[0] if group_found and len(cat_found) > 0 else None
+
+    # group_col logic:
+    # Case 1a: time col + dimension col (year_month + fleet_segment)
+    #          → x=time, group=dimension
+    if time_found and group_found:
+        x_col = time_found[0]
+        group_col = group_found[0]
+    # Case 1b: time col + entity col (month + brand)
+    #          → x=time, group=entity
+    elif time_found and cat_found:
+        x_col = time_found[0]
+        group_col = cat_found[0]
+    # Case 2: entity col + dimension col (brand + component_category)
+    #         → x=entity, group=dimension
+    elif group_found and cat_found:
+        group_col = group_found[0]
+    # Case 3: two entity cols (brand + workshop_name)
+    #         → x=first, group=second
+    elif len(cat_found) >= 2:
+        x_col = cat_found[0]
+        group_col = cat_found[1]
+    else:
+        group_col = None
+
     return {"x_col": x_col, "y_col": y_col, "group_col": group_col}
 
 def _smart_available_charts(columns: list[str], df: pd.DataFrame, chart_type: str) -> list[str]:
