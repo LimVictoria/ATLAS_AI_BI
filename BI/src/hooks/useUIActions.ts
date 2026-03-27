@@ -6,19 +6,17 @@ export async function processUIActions(actions: any[]) {
 
   for (const action of actions) {
 
-    // ── Add new chart to canvas ───────────────────────────────────────────
+    // ── Add new chart to canvas ─────────────────────────────────────────────
     if (action.action === "add_chart") {
       const raw = action.chart_data
       if (!raw) {
-        console.error("[useUIActions] add_chart action missing chart_data:", action)
+        console.error("[useUIActions] add_chart missing chart_data:", action)
         continue
       }
-      // Support both old format (raw.chart = plotly json) and new Path B format (raw = full result)
-      const chartData = raw.chart !== undefined ? raw.chart : raw
       addChart({
         id: uuid(),
         metric_id: action.metric_id || raw.metric_id || "dynamic",
-        title: action.title || raw.title || action.metric_id || "Query Result",
+        title: action.title || raw.title || "Query Result",
         category: raw.category || action.category || "General",
         chart_type: raw.chart_type || action.chart_type || "bar",
         chart_data: raw.chart !== undefined ? raw.chart : raw,
@@ -35,9 +33,10 @@ export async function processUIActions(actions: any[]) {
         loading: false,
         x: 0, y: 0, w: 6, h: 6,
       })
+      continue
     }
 
-    // ── Replace existing card with new data (SQL modification) ───────────────
+    // ── Replace existing card (SQL modification from board_node) ────────────
     if (action.action === "replace_chart") {
       const raw = action.chart_data
       if (!raw || !action.card_id) continue
@@ -55,7 +54,66 @@ export async function processUIActions(actions: any[]) {
       continue
     }
 
-    // ── Toggle wide/long format ───────────────────────────────────────────
+    // ── modify_chart / apply_filter — AI asked to change selected card ──────
+    // board_node now re-routes these through sql_node so they arrive as add_chart.
+    // This handler is a fallback in case old action format arrives.
+    // Always adds a NEW card — never modifies existing card in-place.
+    if (action.action === "modify_chart" || action.action === "apply_filter") {
+      const { charts: currentCharts } = useDashboardStore.getState()
+      const card = currentCharts.find(c => c.id === action.card_id)
+      if (!card || !card.sql) {
+        console.warn("[useUIActions] fallback modify: card not found or no sql", action)
+        continue
+      }
+      try {
+        const { rerenderChart } = await import("@/utils/api")
+        const newFilters = action.action === "apply_filter" && action.dim
+          ? {
+              ...card.filters,
+              [action.dim]: action.values?.length === 1
+                ? action.values[0]
+                : (action.values || []),
+            }
+          : (card.filters || {})
+        const newType = action.chart_type || card.chart_type
+        const result = await rerenderChart(
+          card.base_sql || card.sql,
+          newType,
+          card.title,
+          card.category,
+          newFilters
+        )
+        const filterLabel = action.action === "apply_filter" && action.dim
+          ? ` · ${action.dim}=${action.values?.join(",")}`
+          : " (modified)"
+        // Add NEW card alongside — user can delete the old one
+        addChart({
+          id: uuid(),
+          metric_id: card.metric_id,
+          title: card.title + filterLabel,
+          category: card.category,
+          chart_type: newType as any,
+          chart_data: result.chart,
+          filters: newFilters,
+          available_charts: result.available_charts || card.available_charts,
+          sql: result.sql || card.sql,
+          base_sql: card.base_sql || card.sql,
+          long_sql: card.long_sql || "",
+          wide_sql: card.wide_sql || "",
+          is_wide: false,
+          pivot_col: card.pivot_col || "",
+          filter_suggestions: [],
+          selected: false,
+          loading: false,
+          x: 0, y: 0, w: 6, h: 6,
+        })
+      } catch (e) {
+        console.error("[useUIActions] modify fallback failed:", e)
+      }
+      continue
+    }
+
+    // ── Toggle wide/long format ─────────────────────────────────────────────
     if (action.action === "toggle_format") {
       const card = charts.find(c => c.id === action.card_id)
       if (!card) continue
@@ -75,10 +133,10 @@ export async function processUIActions(actions: any[]) {
         })
         updateChart(action.card_id, {
           chart_data: result.chart,
-          chart_type: result.chart_type,
+          chart_type: card.chart_type,  // never change chart type on format toggle
           sql: result.sql,
           is_wide: newIsWide,
-          available_charts: result.available_charts || card.available_charts,
+          available_charts: card.available_charts,
           loading: false,
         })
       } catch {
@@ -87,76 +145,30 @@ export async function processUIActions(actions: any[]) {
       continue
     }
 
-    // ── Modify existing card (chart type or filters) ───────────────────────
+    // ── Show filter panel on a card ─────────────────────────────────────────
     if (action.action === "show_filter") {
-      const { updateChart } = useDashboardStore.getState()
       if (action.card_id) updateChart(action.card_id, { showFilters: true })
       continue
     }
 
-    if (action.action === "modify_chart") {
-      const { charts: currentCharts } = useDashboardStore.getState()
-      const cardId = action.card_id
-      if (!cardId) continue
-
-      const card = currentCharts.find(c => c.id === cardId)
-      if (!card) continue
-
-      if (action.chart_type && action.chart_type !== card.chart_type) {
-        updateChart(cardId, { loading: true })
-        try {
-          // Path B: card has SQL stored — re-render via /chat/rerender
-          // Path A: card has metric_id — use /query/
-          if (card.sql) {
-            const { rerenderChart } = await import("@/utils/api")
-            const result = await rerenderChart(card.sql, action.chart_type, card.title, card.category)
-            updateChart(cardId, {
-              chart_type: action.chart_type,
-              chart_data: result.chart,
-              available_charts: result.available_charts || card.available_charts,
-              loading: false,
-            })
-          } else {
-            // No SQL stored — card is from old session, cannot re-render
-            console.warn("[useUIActions] card has no sql, cannot switch chart type:", card.metric_id)
-            updateChart(cardId, { loading: false })
-          }
-        } catch {
-          updateChart(cardId, { loading: false })
-        }
-      }
-
-      if (action.filters) {
-        const newFilters = { ...card.filters, ...action.filters }
-        updateChart(cardId, { loading: true, filters: newFilters })
-        try {
-          if (card.sql) {
-            const { rerenderChart } = await import("@/utils/api")
-            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
-            updateChart(cardId, { chart_data: result.chart, filters: newFilters, loading: false })
-          } else {
-            console.warn("[useUIActions] card has no sql, cannot apply filter:", card.metric_id)
-            updateChart(cardId, { loading: false })
-          }
-        } catch {
-          updateChart(cardId, { loading: false })
-        }
-      }
-    }
-
-    // ── Apply filter to selected cards (or all if none selected) ──────────
+    // ── Apply filter to selected/all cards (global filter broadcast) ────────
     if (action.action === "add_filter") {
       const { charts: currentCharts } = useDashboardStore.getState()
       const targets = currentCharts.filter(c => c.selected)
       const applyTo = targets.length > 0 ? targets : currentCharts
-
       for (const card of applyTo) {
         const newFilters = { ...card.filters, [action.dimension]: action.value }
         updateChart(card.id, { loading: true, filters: newFilters })
         try {
           if (card.sql) {
             const { rerenderChart } = await import("@/utils/api")
-            const result = await rerenderChart(card.sql, card.chart_type, card.title, card.category, newFilters)
+            const result = await rerenderChart(
+              card.base_sql || card.sql,
+              card.chart_type,
+              card.title,
+              card.category,
+              newFilters
+            )
             updateChart(card.id, { chart_data: result.chart, filters: newFilters, loading: false })
           } else {
             updateChart(card.id, { filters: newFilters, loading: false })
@@ -165,14 +177,16 @@ export async function processUIActions(actions: any[]) {
           updateChart(card.id, { loading: false })
         }
       }
+      continue
     }
 
-    // ── Reset all filters ─────────────────────────────────────────────────
+    // ── Reset all filters ───────────────────────────────────────────────────
     if (action.action === "reset_filters") {
       const { charts: currentCharts } = useDashboardStore.getState()
       for (const card of currentCharts) {
         updateChart(card.id, { filters: {} })
       }
+      continue
     }
   }
 }
