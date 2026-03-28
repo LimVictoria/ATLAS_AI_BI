@@ -385,7 +385,7 @@ SQL FILTER RULES - CRITICAL:
 
 CHART TYPE GUIDE:
 - line: when query has time column (year_month, year_quarter, month_name) AND only one numeric series — NO categorical breakdown
-- stacked_bar: when query has time column + categorical column (e.g. year_month + brand, month + maintenance_type) — ALWAYS use stacked_bar not line when a categorical dimension is present alongside time
+- stacked_bar: (a) when query has time column + categorical column (e.g. year_month + brand, month + maintenance_type) — ALWAYS use stacked_bar not line when a categorical dimension is present alongside time; (b) when query has TWO categorical columns + one numeric (e.g. brand + component_category + total_cost, brand + maintenance_type + count) — ALWAYS use stacked_bar to show composition
 - bar: category comparisons with no time column (brand, component, workshop)
 - table: when user asks for a table, or query has many columns (>4)
 - scatter: when query returns 2 numeric columns for correlation
@@ -511,11 +511,17 @@ async def chart_node(state: AgentState) -> AgentState:
         chart_type = "bar"
     if chart_type == "stacked_bar" and not meta.get("group_col"):
         chart_type = "bar"
-    # Override: if LLM chose line/bar but data has time + categorical group → stacked_bar
-    # This is the most informative chart for time × category data
-    if chart_type in {"line", "bar"} and meta.get("group_col") and        meta.get("x_col") and meta["x_col"].lower() in TIME_COLS:
-        chart_type = "stacked_bar"
-        print(f"[chart_node] overriding {chart_type} → stacked_bar (time + group_col={meta['group_col']})")
+    # Override: if LLM chose line/bar but data has group_col → stacked_bar
+    # Case A: time + categorical group (year_month + brand)
+    # Case B: entity + dimension group (brand + component_category) — composition chart
+    if chart_type in {"line", "bar"} and meta.get("group_col"):
+        x = meta.get("x_col", "")
+        is_time_x = x.lower() in TIME_COLS if x else False
+        # Only override bar→stacked when there's a meaningful group dimension
+        # Don't override if group_col is same as x_col (safety check)
+        if meta["group_col"] != x:
+            chart_type = "stacked_bar"
+            print(f"[chart_node] overriding to stacked_bar (x={x!r} group={meta['group_col']!r})")
     try:
         chart_json = _build_chart(df, meta, chart_type)
     except Exception as e:
