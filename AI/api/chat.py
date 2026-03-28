@@ -280,16 +280,27 @@ def get_board(user_id: str):
 @router.post("/board")
 def post_board(req: BoardStateRequest):
     user_id = req.user_id or "default"
-    ok = save_board(user_id, req.board_state)
-    if not ok:
+    try:
+        save_board(user_id, req.board_state)
+    except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to save board")
     return {"message": "Board saved"}
 
 @router.post("/board/save")
 def post_board_save(req: BoardStateRequest):
     user_id = req.user_id or "default"
-    ok = save_board(user_id, req.board_state)
-    if not ok:
+    # Strip chart_data before saving — too large for Supabase, regenerated from SQL on load
+    stripped = []
+    for card in (req.board_state or []):
+        if isinstance(card, dict):
+            c = {k: v for k, v in card.items() if k != "chart_data"}
+            stripped.append(c)
+        else:
+            stripped.append(card)
+    try:
+        save_board(user_id, stripped)  # save_board returns None — don't check return value
+    except Exception as e:
+        print(f"[board/save] failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to save board")
     return {"message": "Board saved"}
 
@@ -383,6 +394,121 @@ def toggle_format(req: ToggleFormatRequest):
         "sql":              sql,
         "is_wide":          req.is_wide,
     }
+
+
+
+# ── Star schema join map ───────────────────────────────────────────────────────
+_STAR_JOIN_MAP = {
+    "dim_truck":     {"alias": "dt", "fk": "f.truck_id = dt.truck_id"},
+    "dim_component": {"alias": "dc", "fk": "f.component_id = dc.component_id"},
+    "dim_workshop":  {"alias": "dw", "fk": "f.workshop_id = dw.workshop_id"},
+}
+
+_COL_SOURCE_TABLE: dict = {}
+
+def _get_col_source_table() -> dict:
+    global _COL_SOURCE_TABLE
+    if _COL_SOURCE_TABLE:
+        return _COL_SOURCE_TABLE
+    try:
+        from db.duckdb_session import _tables_meta
+        priority = ["fact_maintenance_event","dim_truck","dim_component","dim_workshop"]
+        result = {}
+        for tname in priority:
+            if tname in _tables_meta:
+                for col in _tables_meta[tname]["df"].columns:
+                    result[col.lower()] = tname
+        _COL_SOURCE_TABLE = result
+    except Exception:
+        pass
+    return _COL_SOURCE_TABLE
+
+
+def derive_source_sql(view_sql: str) -> str:
+    """Derive star schema source SQL from a v_maintenance_full query."""
+    import re as _re
+    if "v_maintenance_full" not in view_sql.lower():
+        return view_sql
+    col_map = _get_col_source_table()
+    pat_select = _re.compile(r"SELECT\s+(.+?)\s+FROM", _re.IGNORECASE | _re.DOTALL)
+    pat_where  = _re.compile(r"WHERE\s+(.+?)(?=GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
+    pat_group  = _re.compile(r"GROUP\s+BY\s+(.+?)(?=ORDER\s+BY|HAVING|LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
+    pat_order  = _re.compile(r"ORDER\s+BY\s+(.+?)(?=LIMIT|$)", _re.IGNORECASE | _re.DOTALL)
+    pat_words  = _re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*")
+    pat_qualified = _re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*\.[a-zA-Z_][a-zA-Z_0-9]*")
+    select_match = pat_select.search(view_sql)
+    if not select_match:
+        return view_sql
+    where_match = pat_where.search(view_sql)
+    group_match = pat_group.search(view_sql)
+    order_match = pat_order.search(view_sql)
+    all_words = set(w.lower() for w in pat_words.findall(view_sql))
+    needed_dims = set()
+    for col in all_words:
+        src = col_map.get(col)
+        if src and src != "fact_maintenance_event" and src in _STAR_JOIN_MAP:
+            needed_dims.add(src)
+    alias_map = {"fact_maintenance_event": "f"}
+    for dim in needed_dims:
+        alias_map[dim] = _STAR_JOIN_MAP[dim]["alias"]
+    SQL_KEYWORDS = {
+        "from","where","group","by","order","having","limit","and","or","not",
+        "in","like","between","is","null","true","false","as","on","join",
+        "select","sum","avg","count","max","min","round","nullif","case",
+        "when","then","else","end","asc","desc","distinct","inner","left",
+        "right","outer","cross","using","over","partition","window"
+    }
+    def qualify_token(word: str) -> str:
+        src = col_map.get(word.lower())
+        if src and src in alias_map:
+            return f"{alias_map[src]}.{word}"
+        return word
+    def qualify_expr(expr: str) -> str:
+        qualified_spans = set()
+        for m in pat_qualified.finditer(expr):
+            for i in range(m.start(), m.end()):
+                qualified_spans.add(i)
+        result = []
+        i = 0
+        while i < len(expr):
+            if i in qualified_spans:
+                result.append(expr[i]); i += 1; continue
+            m = _re.match(r"[a-zA-Z_][a-zA-Z_0-9]*", expr[i:])
+            if m:
+                word = m.group(0)
+                if word.lower() not in SQL_KEYWORDS:
+                    result.append(qualify_token(word))
+                else:
+                    result.append(word)
+                i += len(word)
+            else:
+                result.append(expr[i]); i += 1
+        return "".join(result)
+    joins = ["FROM fact_maintenance_event f"]
+    for dim in sorted(needed_dims):
+        j = _STAR_JOIN_MAP[dim]
+        joins.append(f"JOIN {dim} {j['alias']} ON {j['fk']}")
+    select_q = qualify_expr(select_match.group(1))
+    where_q  = f"WHERE {qualify_expr(where_match.group(1).strip())}" if where_match else ""
+    group_q  = f"GROUP BY {qualify_expr(group_match.group(1).strip())}" if group_match else ""
+    order_q  = f"ORDER BY {qualify_expr(order_match.group(1).strip())}" if order_match else ""
+    parts = ["-- Star schema equivalent (for data engineers)", f"SELECT {select_q}"] \
+          + joins \
+          + [p for p in [where_q, group_q, order_q] if p]
+    return "\n".join(parts)
+
+
+class DeriveSqlRequest(BaseModel):
+    sql: str
+
+@router.post("/derive_source_sql")
+def derive_source_sql_endpoint(req: DeriveSqlRequest):
+    """Derive star schema source SQL from a v_maintenance_full view query."""
+    try:
+        source_sql = derive_source_sql(req.sql)
+        return {"source_sql": source_sql, "view_sql": req.sql}
+    except Exception as e:
+        return {"source_sql": req.sql, "view_sql": req.sql, "error": str(e)}
 
 
 class RerenderRequest(BaseModel):
