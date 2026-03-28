@@ -77,14 +77,12 @@ def load_messages(user_id: str = DEFAULT_USER, limit: int = 40) -> list[dict]:
         return []
 
 
-def clear_messages(user_id: str = DEFAULT_USER) -> bool:
+def clear_messages(user_id: str = DEFAULT_USER) -> None:
     try:
         get_supabase().table("bi_chat_history") \
             .delete().eq("user_id", user_id).execute()
-        return True
     except Exception as e:
         print(f"[Supabase] clear_messages failed: {e}")
-        return False
 
 
 # ── User memory persistence ────────────────────────────────────────────────────
