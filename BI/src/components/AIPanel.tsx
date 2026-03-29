@@ -32,6 +32,10 @@ export default function AIPanel() {
   // Load board and chat history on first mount
   useEffect(() => {
     console.log("[ATLAS] AIPanel mounted — calling loadBoardFromServer")
+    // Reset boardLoaded so we always reload on fresh page open
+    // Without this, if the store was initialised in a previous render,
+    // the guard returns immediately without loading anything
+    useDashboardStore.setState({ boardLoaded: false, messagesLoaded: false })
     loadBoardFromServer().then(() => {
       console.log("[ATLAS] loadBoardFromServer complete")
     }).catch(e => {
