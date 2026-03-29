@@ -151,7 +151,13 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   selectedCharts: () => get().charts.filter(c => c.selected),
 
   loadBoardFromServer: async () => {
-    if (get().boardLoaded) return
+    console.log("[Board] loadBoardFromServer called, boardLoaded=", get().boardLoaded)
+    if (get().boardLoaded) {
+      console.log("[Board] SKIPPED — boardLoaded is true, resetting and retrying")
+      // Force reset and continue anyway — don't return
+    }
+    // Always proceed — reset guard to ensure fresh load on every page open
+    set({ boardLoaded: false })
 
     // Ping backend to wake Render from sleep before loading
     const { pingBackend, rerenderChart } = await import("@/utils/api")
@@ -161,11 +167,13 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     let resp: any = null
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        console.log(`[Board] load attempt ${attempt}/3 for userId=${get().userId}`)
         resp = await loadBoard(get().userId)
+        console.log(`[Board] load OK — cards=${resp?.board_state?.length ?? 0}`)
         break
       } catch (e) {
         console.warn(`[Board] load attempt ${attempt}/3 failed:`, e)
-        if (attempt < 3) await delay(5000 * attempt)  // 5s then 10s
+        if (attempt < 3) await delay(5000 * attempt)
       }
     }
 
@@ -178,22 +186,20 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     try {
       const saved: ChartCard[] = (resp.board_state || []).map((c: any) => ({
         ...c,
-        chart_data: null,      // stripped on save — regenerated below from SQL
+        chart_data: null,
         loading: !!c.sql,
         showFilters: true,
       }))
 
-      // Only keep cards that have SQL — they can be re-rendered
       const valid = saved.filter(c => !!c.sql)
+      console.log(`[Board] ${valid.length} valid cards found, starting rerender...`)
       set({ charts: valid, boardLoaded: true })
       _cardCounter = valid.length
 
-      // Re-render each card from its stored SQL
-      // Always use long_sql for rerender — base_sql/sql may be wide pivot format
-      // which breaks chart rendering. long_sql is always the canonical long-format SQL.
       for (const card of valid) {
         try {
           const sqlToRender = card.long_sql || card.base_sql || card.sql || ""
+          console.log(`[Board] rerendering card "${card.title}" chart_type=${card.chart_type} sql_len=${sqlToRender.length}`)
           const result = await rerenderChart(
             sqlToRender,
             card.chart_type,
@@ -201,13 +207,15 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
             card.category,
             card.filters || {}
           )
+          console.log(`[Board] card "${card.title}" rerendered OK — chart_type=${result.chart_type}`)
           get().updateChart(card.id, {
             chart_data: result.chart,
             chart_type: (result.chart_type || card.chart_type) as ChartType,
             available_charts: result.available_charts || card.available_charts,
             loading: false,
           })
-        } catch {
+        } catch (e) {
+          console.error(`[Board] rerender failed for card "${card.title}":`, e)
           get().updateChart(card.id, { loading: false })
         }
       }
