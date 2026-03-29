@@ -67,26 +67,31 @@ const nextPos = (existingCount = 0) => {
 // Keys that change too frequently or are too large to persist on every update
 const SKIP_PERSIST_KEYS = new Set(["loading", "chart_data", "showFilters", "selected"])
 
-const serialiseChart = (c: ChartCard) => ({
-  id: c.id,
-  metric_id: c.metric_id,
-  title: c.title,
-  category: c.category,
-  chart_type: c.chart_type,
-  chart_data: null,              // always strip — too large for Supabase, regenerated from SQL on load
-  filters: c.filters,
-  available_charts: c.available_charts,
-  sql: c.sql || "",
-  base_sql: c.base_sql || c.sql || "",
-  long_sql: c.long_sql || c.base_sql || c.sql || "",
-  wide_sql: c.wide_sql || "",
-  is_wide: c.is_wide || false,
-  pivot_col: c.pivot_col || "",
-  filter_suggestions: c.filter_suggestions || [],
-  selected: false,
-  loading: false,
-  x: c.x, y: c.y, w: c.w, h: c.h,
-})
+const serialiseChart = (c: ChartCard) => {
+  // long_sql is always the canonical long-format SQL — use it as the restore source
+  // base_sql and sql may be wide pivot format if user had pivoted the card
+  const canonicalSql = c.long_sql || c.base_sql || c.sql || ""
+  return {
+    id: c.id,
+    metric_id: c.metric_id,
+    title: c.title,
+    category: c.category,
+    chart_type: c.chart_type,
+    chart_data: null,              // always strip — too large for Supabase, regenerated from SQL on load
+    filters: c.filters,
+    available_charts: c.available_charts,
+    sql: canonicalSql,             // always save long format as primary sql
+    base_sql: canonicalSql,        // always save long format as base
+    long_sql: canonicalSql,
+    wide_sql: c.wide_sql || "",
+    is_wide: false,                // always restore in long format — user can re-pivot
+    pivot_col: c.pivot_col || "",
+    filter_suggestions: c.filter_suggestions || [],
+    selected: false,
+    loading: false,
+    x: c.x, y: c.y, w: c.w, h: c.h,
+  }
+}
 
 // Debounce board saves — avoid hammering Supabase on rapid updates
 let _saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -184,10 +189,13 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       _cardCounter = valid.length
 
       // Re-render each card from its stored SQL
+      // Always use long_sql for rerender — base_sql/sql may be wide pivot format
+      // which breaks chart rendering. long_sql is always the canonical long-format SQL.
       for (const card of valid) {
         try {
+          const sqlToRender = card.long_sql || card.base_sql || card.sql || ""
           const result = await rerenderChart(
-            card.base_sql || card.sql || "",
+            sqlToRender,
             card.chart_type,
             card.title,
             card.category,
@@ -242,7 +250,8 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
         id: `hist-${i}`,
         role: m.role as "user" | "assistant" | "system",
         text: m.content || "",
-        timestamp: new Date(m.created_at || Date.now()),
+        // Store as ISO string to avoid server/client Date hydration mismatch
+        timestamp: new Date(m.created_at || 0),
         loading: false,
       }))
       set({ messages: msgs.length > 0 ? msgs : get().messages, messagesLoaded: true })
