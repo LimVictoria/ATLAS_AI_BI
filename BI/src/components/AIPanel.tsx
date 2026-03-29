@@ -31,7 +31,12 @@ export default function AIPanel() {
 
   // Load board and chat history on first mount
   useEffect(() => {
-    loadBoardFromServer()
+    console.log("[ATLAS] AIPanel mounted — calling loadBoardFromServer")
+    loadBoardFromServer().then(() => {
+      console.log("[ATLAS] loadBoardFromServer complete")
+    }).catch(e => {
+      console.error("[ATLAS] loadBoardFromServer error:", e)
+    })
     loadMessagesFromServer()
     // Load data quality warnings once per session
     getDQWarnings().then(data => {
