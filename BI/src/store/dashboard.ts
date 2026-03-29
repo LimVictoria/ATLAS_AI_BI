@@ -73,7 +73,7 @@ const serialiseChart = (c: ChartCard) => ({
   title: c.title,
   category: c.category,
   chart_type: c.chart_type,
-  chart_data: null,              // always strip — too large for Supabase, regenerated from SQL
+  chart_data: null,              // always strip — too large for Supabase, regenerated from SQL on load
   filters: c.filters,
   available_charts: c.available_charts,
   sql: c.sql || "",
@@ -97,6 +97,9 @@ const persistBoard = (charts: ChartCard[], userId: string) => {
     saveBoard(serialised, userId).catch(e => console.warn("[Board] save failed:", e))
   }, 1500)
 }
+
+// Retry helper — waits ms before resolving
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 export const useDashboardStore = create<DashboardStore>((set, get) => ({
   sessionId: null,
@@ -123,12 +126,9 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   updateChart: (id, patch) => {
     const newCharts = get().charts.map(c => c.id === id ? { ...c, ...patch } : c)
     set({ charts: newCharts })
-    // Skip persist if ALL changed keys are noise keys
     const keys = Object.keys(patch)
     const shouldPersist = keys.some(k => !SKIP_PERSIST_KEYS.has(k))
-    if (shouldPersist) {
-      persistBoard(newCharts, get().userId)
-    }
+    if (shouldPersist) persistBoard(newCharts, get().userId)
   },
 
   toggleSelect: (id, multi) => set((s) => ({
@@ -147,21 +147,43 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
 
   loadBoardFromServer: async () => {
     if (get().boardLoaded) return
+
+    // Ping backend to wake Render from sleep before loading
+    const { pingBackend, rerenderChart } = await import("@/utils/api")
+    pingBackend()
+
+    // Retry up to 3 times — Render free tier cold start takes 50-80s
+    let resp: any = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        resp = await loadBoard(get().userId)
+        break
+      } catch (e) {
+        console.warn(`[Board] load attempt ${attempt}/3 failed:`, e)
+        if (attempt < 3) await delay(5000 * attempt)  // 5s then 10s
+      }
+    }
+
+    if (!resp) {
+      console.warn("[Board] all load attempts failed — starting with empty board")
+      set({ boardLoaded: true })
+      return
+    }
+
     try {
-      const resp = await loadBoard(get().userId)
       const saved: ChartCard[] = (resp.board_state || []).map((c: any) => ({
         ...c,
-        chart_data: null,                         // always null from server — regenerated below
-        loading: !!c.sql,                         // mark loading if has SQL to rerender
+        chart_data: null,      // stripped on save — regenerated below from SQL
+        loading: !!c.sql,
         showFilters: true,
       }))
-      // Discard cards with no SQL and no chart_data — they can't be recovered
+
+      // Only keep cards that have SQL — they can be re-rendered
       const valid = saved.filter(c => !!c.sql)
       set({ charts: valid, boardLoaded: true })
       _cardCounter = valid.length
 
-      // Auto-rerender all cards from their stored SQL
-      const { rerenderChart } = await import("@/utils/api")
+      // Re-render each card from its stored SQL
       for (const card of valid) {
         try {
           const result = await rerenderChart(
@@ -182,7 +204,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
         }
       }
     } catch (e) {
-      console.warn("[Board] load failed:", e)
+      console.warn("[Board] parse/rerender error:", e)
       set({ boardLoaded: true })
     }
   },
@@ -196,9 +218,26 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
 
   loadMessagesFromServer: async () => {
     if (get().messagesLoaded) return
+    const { getChatHistory } = await import("@/utils/api")
+
+    // Retry up to 3 times for cold start
+    let resp: any = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        resp = await getChatHistory(get().userId)
+        break
+      } catch (e) {
+        console.warn(`[Messages] load attempt ${attempt}/3 failed:`, e)
+        if (attempt < 3) await delay(5000 * attempt)
+      }
+    }
+
+    if (!resp) {
+      set({ messagesLoaded: true })
+      return
+    }
+
     try {
-      const { getChatHistory } = await import("@/utils/api")
-      const resp = await getChatHistory(get().userId)
       const msgs = (resp.messages || []).map((m: any, i: number) => ({
         id: `hist-${i}`,
         role: m.role as "user" | "assistant" | "system",
@@ -208,7 +247,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       }))
       set({ messages: msgs.length > 0 ? msgs : get().messages, messagesLoaded: true })
     } catch (e) {
-      console.warn("[Messages] load failed:", e)
+      console.warn("[Messages] parse error:", e)
       set({ messagesLoaded: true })
     }
   },
